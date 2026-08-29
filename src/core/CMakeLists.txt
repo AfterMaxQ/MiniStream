@@ -2,6 +2,7 @@ add_library(
   ministream_core
   STATIC
   protocol/wire.cpp
+  telemetry/window_stats.cpp
 )
 add_library(MiniStream::Core ALIAS ministream_core)
 
