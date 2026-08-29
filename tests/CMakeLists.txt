@@ -16,8 +16,13 @@ add_executable(
   fec/fec_codec_test.cpp
   security/pairing_test.cpp
   security/session_crypto_test.cpp
+  session/handshake_test.cpp
+  tools/netprobe_options_test.cpp
+  "${PROJECT_SOURCE_DIR}/tools/netprobe/options.cpp"
+  net/udp_endpoint_test.cpp
 )
 target_link_libraries(ministream_tests PRIVATE MiniStream::Core Catch2::Catch2WithMain)
+target_include_directories(ministream_tests PRIVATE "${PROJECT_SOURCE_DIR}/tools")
 ministream_set_warnings(ministream_tests)
 
 if(WIN32)

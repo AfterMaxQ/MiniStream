@@ -28,3 +28,7 @@ if(MINISTREAM_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
 endif()
+
+if(MINISTREAM_BUILD_TOOLS)
+  add_subdirectory(tools/netprobe)
+endif()

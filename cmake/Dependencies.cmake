@@ -21,7 +21,16 @@ FetchContent_Declare(
   asio
   URL https://github.com/chriskohlhoff/asio/archive/refs/tags/asio-1-38-2.tar.gz
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  SOURCE_SUBDIR _ministream_no_add_subdirectory
 )
+FetchContent_MakeAvailable(asio)
+add_library(ministream_asio INTERFACE)
+target_include_directories(ministream_asio SYSTEM INTERFACE "${asio_SOURCE_DIR}/include")
+target_compile_definitions(ministream_asio INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED)
+if(WIN32)
+  target_compile_definitions(ministream_asio INTERFACE _WIN32_WINNT=0x0A00)
+  target_link_libraries(ministream_asio INTERFACE ws2_32 mswsock)
+endif()
 
 FetchContent_Declare(
   SDL3

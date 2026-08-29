@@ -13,6 +13,8 @@ add_library(
   fec/fec_codec.cpp
   security/pairing.cpp
   security/session_crypto.cpp
+  session/handshake.cpp
+  net/udp_endpoint.cpp
 )
 add_library(MiniStream::Core ALIAS ministream_core)
 
@@ -23,5 +25,9 @@ target_include_directories(
 )
 
 target_compile_features(ministream_core PUBLIC cxx_std_20)
-target_link_libraries(ministream_core PRIVATE ministream_leopard ministream_sodium)
+target_link_libraries(
+  ministream_core
+  PRIVATE ministream_leopard ministream_sodium
+  PUBLIC ministream_asio
+)
 ministream_set_warnings(ministream_core)
