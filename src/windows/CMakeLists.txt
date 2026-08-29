@@ -15,8 +15,23 @@ target_link_libraries(
 )
 ministream_set_warnings(ministream_windows_platform)
 
-add_executable(ministream_host WIN32 main.cpp)
-target_link_libraries(ministream_host PRIVATE ministream_windows_platform)
+if(MINISTREAM_BUILD_UI)
+  qt_add_executable(
+    ministream_host
+    WIN32
+    qt_main.cpp
+    ui/host_controller.cpp
+    ui/host_controller.hpp
+  )
+  target_link_libraries(
+    ministream_host
+    PRIVATE ministream_windows_platform Qt6::Quick Qt6::Qml Qt6::QuickControls2
+  )
+  ministream_add_qml_ui(ministream_host)
+else()
+  add_executable(ministream_host WIN32 main.cpp)
+  target_link_libraries(ministream_host PRIVATE ministream_windows_platform)
+endif()
 ministream_set_warnings(ministream_host)
 
 add_custom_command(
@@ -26,3 +41,9 @@ add_custom_command(
           $<TARGET_FILE:ministream_sodium>
           $<TARGET_FILE_DIR:ministream_host>
 )
+
+install(TARGETS ministream_host RUNTIME DESTINATION . COMPONENT Runtime)
+install(FILES "$<TARGET_FILE:ministream_sodium>" DESTINATION . COMPONENT Runtime)
+if(MINISTREAM_BUILD_UI)
+  ministream_install_qt_runtime(ministream_host)
+endif()

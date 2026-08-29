@@ -1,0 +1,57 @@
+set(CPACK_PACKAGE_NAME "MiniStream")
+set(CPACK_PACKAGE_VENDOR "AfterMaxQ")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Low-latency LAN game streaming")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "MiniStream")
+set(CPACK_PACKAGE_FILE_NAME "MiniStream-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_PACKAGE_CHECKSUM SHA256)
+set(CPACK_COMPONENTS_ALL Runtime)
+set(CPACK_VERBATIM_VARIABLES YES)
+
+if(WIN32)
+  set(CPACK_GENERATOR NSIS)
+  set(CPACK_NSIS_PACKAGE_NAME "MiniStream")
+  set(CPACK_NSIS_DISPLAY_NAME "MiniStream")
+  set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+  set(CPACK_NSIS_MODIFY_PATH OFF)
+  set(CPACK_NSIS_MUI_FINISHPAGE_RUN "ministream_host.exe")
+  set(CPACK_NSIS_INSTALLED_ICON_NAME "ministream_host.exe")
+  set(CPACK_NSIS_CREATE_ICONS_EXTRA
+      "CreateShortCut '$DESKTOP\\MiniStream.lnk' '$INSTDIR\\ministream_host.exe'")
+  set(CPACK_NSIS_DELETE_ICONS_EXTRA "Delete '$DESKTOP\\MiniStream.lnk'")
+
+  set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT Runtime)
+  include(InstallRequiredSystemLibraries)
+
+  set(_ministream_driver_directory "${CMAKE_BINARY_DIR}/packaging")
+  set(_ministream_driver_setup
+      "${_ministream_driver_directory}/ViGEmBus_1.22.0_x64_x86_arm64.exe")
+  file(MAKE_DIRECTORY "${_ministream_driver_directory}")
+  if(NOT EXISTS "${_ministream_driver_setup}")
+    file(
+      DOWNLOAD
+      "https://github.com/nefarius/ViGEmBus/releases/download/v1.22.0/ViGEmBus_1.22.0_x64_x86_arm64.exe"
+      "${_ministream_driver_setup}"
+      EXPECTED_HASH SHA256=89220a7865076b342892f98865f3499fb7c4cfd673159e89d352c360fd014c6a
+      SHOW_PROGRESS
+      TLS_VERIFY ON
+    )
+  endif()
+  install(
+    FILES "${_ministream_driver_setup}"
+    DESTINATION drivers
+    COMPONENT Runtime
+  )
+  set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
+      "ReadRegStr $0 HKLM 'SYSTEM\\CurrentControlSet\\Services\\ViGEmBus' 'ImagePath'\n\
+       StrCmp $0 '' 0 MiniStreamDriverDone\n\
+       MessageBox MB_YESNO|MB_ICONQUESTION 'MiniStream needs a virtual controller driver. Install ViGEmBus now?' IDNO MiniStreamDriverDone\n\
+       ExecWait '\"$INSTDIR\\drivers\\ViGEmBus_1.22.0_x64_x86_arm64.exe\" /exenoui /qn /norestart' $1\n\
+       MiniStreamDriverDone:")
+elseif(APPLE)
+  set(CPACK_GENERATOR DragNDrop)
+  set(CPACK_DMG_VOLUME_NAME "MiniStream")
+  set(CPACK_DMG_FORMAT UDZO)
+endif()
+
+include(CPack)

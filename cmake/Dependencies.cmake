@@ -38,6 +38,11 @@ FetchContent_Declare(
   URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-${MINISTREAM_SDL_VERSION}.tar.gz
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
+if(APPLE)
+  set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+  set(SDL_EXAMPLES OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(SDL3)
+endif()
 
 FetchContent_Declare(
   opus
@@ -45,11 +50,20 @@ FetchContent_Declare(
   URL_HASH SHA256=65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
+set(_ministream_saved_build_testing "${BUILD_TESTING}")
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
 set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(opus)
+if(_ministream_saved_build_testing STREQUAL "")
+  unset(BUILD_TESTING CACHE)
+else()
+  set(BUILD_TESTING "${_ministream_saved_build_testing}" CACHE BOOL "" FORCE)
+endif()
+unset(_ministream_saved_build_testing)
 if(TARGET Opus::opus)
   set(MINISTREAM_OPUS_TARGET Opus::opus)
 elseif(TARGET opus)

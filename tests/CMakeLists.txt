@@ -26,10 +26,13 @@ add_executable(
   audio/drift_controller_test.cpp
   input/gamepad_packet_test.cpp
   input/input_coalescer_test.cpp
+  input/input_capture_test.cpp
   input/rumble_packet_test.cpp
   session/session_runtime_test.cpp
   telemetry/stream_aggregator_test.cpp
   config/stream_profile_test.cpp
+  session/discovery_test.cpp
+  security/pairing_wire_test.cpp
 )
 target_link_libraries(ministream_tests PRIVATE MiniStream::Core Catch2::Catch2WithMain)
 target_include_directories(ministream_tests PRIVATE "${PROJECT_SOURCE_DIR}/tools")
