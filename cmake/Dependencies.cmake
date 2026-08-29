@@ -41,6 +41,31 @@ FetchContent_Declare(
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
+FetchContent_Declare(
+  leopard
+  GIT_REPOSITORY https://github.com/catid/leopard.git
+  GIT_TAG ${MINISTREAM_LEOPARD_COMMIT}
+  GIT_SHALLOW FALSE
+  SOURCE_SUBDIR _ministream_no_add_subdirectory
+)
+FetchContent_MakeAvailable(leopard)
+
+add_library(
+  ministream_leopard
+  STATIC
+  "${leopard_SOURCE_DIR}/leopard.cpp"
+  "${leopard_SOURCE_DIR}/LeopardCommon.cpp"
+  "${leopard_SOURCE_DIR}/LeopardFF8.cpp"
+  "${leopard_SOURCE_DIR}/LeopardFF16.cpp"
+)
+target_include_directories(ministream_leopard PUBLIC "${leopard_SOURCE_DIR}")
+target_compile_definitions(ministream_leopard PRIVATE LEO_BUILDING)
+if(MSVC)
+  target_compile_options(ministream_leopard PRIVATE /W0)
+else()
+  target_compile_options(ministream_leopard PRIVATE -w)
+endif()
+
 if(MINISTREAM_BUILD_UI)
   find_package(
     Qt6 ${MINISTREAM_QT_VERSION}

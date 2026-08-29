@@ -13,6 +13,7 @@ add_executable(
   time/clock_sync_test.cpp
   net/fault_injector_test.cpp
   adaptation/rate_controller_test.cpp
+  fec/fec_codec_test.cpp
 )
 target_link_libraries(ministream_tests PRIVATE MiniStream::Core Catch2::Catch2WithMain)
 ministream_set_warnings(ministream_tests)
