@@ -51,18 +51,22 @@ CapabilityStatus inspect_nvenc() {
 
 CapabilityStatus inspect_wasapi() {
   const auto initialized = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-  ComPtr<IMMDeviceEnumerator> enumerator;
-  const auto created = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
-                                        IID_PPV_ARGS(&enumerator));
-  ComPtr<IMMDevice> endpoint;
-  const auto selected = SUCCEEDED(created)
-                            ? enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &endpoint)
-                            : created;
+  CapabilityStatus result{false, "No default audio output"};
+  {
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    const auto created = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                          IID_PPV_ARGS(&enumerator));
+    ComPtr<IMMDevice> endpoint;
+    const auto selected = SUCCEEDED(created)
+                              ? enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &endpoint)
+                              : created;
+    const bool ready = SUCCEEDED(selected);
+    result = {ready, ready ? "WASAPI default output detected" : "No default audio output"};
+  }
   if (SUCCEEDED(initialized)) {
     CoUninitialize();
   }
-  const bool ready = SUCCEEDED(selected);
-  return {ready, ready ? "WASAPI default output detected" : "No default audio output"};
+  return result;
 }
 
 CapabilityStatus inspect_vigem() {
