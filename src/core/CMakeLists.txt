@@ -4,6 +4,7 @@ add_library(
   protocol/wire.cpp
   telemetry/window_stats.cpp
   transport/packetizer.cpp
+  transport/reassembler.cpp
 )
 add_library(MiniStream::Core ALIAS ministream_core)
 
