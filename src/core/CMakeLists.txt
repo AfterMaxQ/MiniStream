@@ -19,6 +19,12 @@ add_library(
   audio/opus_codec.cpp
   audio/jitter_buffer.cpp
   audio/drift_controller.cpp
+  input/gamepad_packet.cpp
+  input/input_coalescer.cpp
+  input/rumble_packet.cpp
+  session/session_runtime.cpp
+  telemetry/stream_aggregator.cpp
+  config/stream_profile.cpp
 )
 add_library(MiniStream::Core ALIAS ministream_core)
 
