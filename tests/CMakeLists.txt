@@ -14,9 +14,21 @@ add_executable(
   net/fault_injector_test.cpp
   adaptation/rate_controller_test.cpp
   fec/fec_codec_test.cpp
+  security/pairing_test.cpp
+  security/session_crypto_test.cpp
 )
 target_link_libraries(ministream_tests PRIVATE MiniStream::Core Catch2::Catch2WithMain)
 ministream_set_warnings(ministream_tests)
+
+if(WIN32)
+  add_custom_command(
+    TARGET ministream_tests
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:ministream_sodium>
+            $<TARGET_FILE_DIR:ministream_tests>
+  )
+endif()
 
 include(Catch)
 catch_discover_tests(ministream_tests)

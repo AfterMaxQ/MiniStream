@@ -13,9 +13,14 @@ class Result {
   static Result err(E error) { return Result(std::in_place_index<1>, std::move(error)); }
 
   [[nodiscard]] bool has_value() const noexcept { return storage_.index() == 0; }
+  explicit operator bool() const noexcept { return has_value(); }
 
   T& value() { return get<0>(); }
   const T& value() const { return get<0>(); }
+  T& operator*() { return value(); }
+  const T& operator*() const { return value(); }
+  T* operator->() { return &value(); }
+  const T* operator->() const { return &value(); }
   E& error() { return get<1>(); }
   const E& error() const { return get<1>(); }
 
@@ -50,6 +55,7 @@ class Result<void, E> {
   static Result err(E error) { return Result(std::in_place_index<1>, std::move(error)); }
 
   [[nodiscard]] bool has_value() const noexcept { return storage_.index() == 0; }
+  explicit operator bool() const noexcept { return has_value(); }
 
   void value() const {
     if (!has_value()) {

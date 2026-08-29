@@ -35,11 +35,40 @@ FetchContent_Declare(
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
-FetchContent_Declare(
-  libsodium
-  URL https://github.com/jedisct1/libsodium/archive/refs/tags/${MINISTREAM_SODIUM_VERSION}-RELEASE.tar.gz
-  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
+if(WIN32)
+  FetchContent_Declare(
+    libsodium_prebuilt
+    URL https://github.com/jedisct1/libsodium/releases/download/1.0.20-RELEASE/libsodium-1.0.20-msvc.zip
+    URL_HASH SHA256=2ff97f9e3f5b341bdc808e698057bea1ae454f99e29ff6f9b62e14d0eb1b1baa
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    SOURCE_SUBDIR _ministream_no_add_subdirectory
+  )
+  FetchContent_MakeAvailable(libsodium_prebuilt)
+  set(_ministream_sodium_root "${libsodium_prebuilt_SOURCE_DIR}")
+  add_library(ministream_sodium SHARED IMPORTED GLOBAL)
+  set_target_properties(
+    ministream_sodium
+    PROPERTIES
+      IMPORTED_CONFIGURATIONS "Debug;Release"
+      IMPORTED_LOCATION_DEBUG "${_ministream_sodium_root}/x64/Debug/v143/dynamic/libsodium.dll"
+      IMPORTED_IMPLIB_DEBUG "${_ministream_sodium_root}/x64/Debug/v143/dynamic/libsodium.lib"
+      IMPORTED_LOCATION_RELEASE "${_ministream_sodium_root}/x64/Release/v143/dynamic/libsodium.dll"
+      IMPORTED_IMPLIB_RELEASE "${_ministream_sodium_root}/x64/Release/v143/dynamic/libsodium.lib"
+      MAP_IMPORTED_CONFIG_RELWITHDEBINFO Release
+      MAP_IMPORTED_CONFIG_MINSIZEREL Release
+      INTERFACE_INCLUDE_DIRECTORIES "${_ministream_sodium_root}/include"
+  )
+else()
+  find_path(MINISTREAM_SODIUM_INCLUDE_DIR sodium.h REQUIRED)
+  find_library(MINISTREAM_SODIUM_LIBRARY sodium REQUIRED)
+  add_library(ministream_sodium UNKNOWN IMPORTED GLOBAL)
+  set_target_properties(
+    ministream_sodium
+    PROPERTIES
+      IMPORTED_LOCATION "${MINISTREAM_SODIUM_LIBRARY}"
+      INTERFACE_INCLUDE_DIRECTORIES "${MINISTREAM_SODIUM_INCLUDE_DIR}"
+  )
+endif()
 
 FetchContent_Declare(
   leopard
