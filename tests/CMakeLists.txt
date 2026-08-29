@@ -6,6 +6,7 @@ add_executable(
   telemetry/window_stats_test.cpp
   concurrency/queue_test.cpp
   session/session_state_test.cpp
+  transport/packetizer_test.cpp
 )
 target_link_libraries(ministream_tests PRIVATE MiniStream::Core Catch2::Catch2WithMain)
 ministream_set_warnings(ministream_tests)
