@@ -15,6 +15,10 @@ add_library(
   security/session_crypto.cpp
   session/handshake.cpp
   net/udp_endpoint.cpp
+  audio/audio_packet.cpp
+  audio/opus_codec.cpp
+  audio/jitter_buffer.cpp
+  audio/drift_controller.cpp
 )
 add_library(MiniStream::Core ALIAS ministream_core)
 
@@ -27,7 +31,7 @@ target_include_directories(
 target_compile_features(ministream_core PUBLIC cxx_std_20)
 target_link_libraries(
   ministream_core
-  PRIVATE ministream_leopard ministream_sodium
+  PRIVATE ministream_leopard ministream_sodium ${MINISTREAM_OPUS_TARGET}
   PUBLIC ministream_asio
 )
 ministream_set_warnings(ministream_core)

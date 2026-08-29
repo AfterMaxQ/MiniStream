@@ -20,6 +20,10 @@ add_executable(
   tools/netprobe_options_test.cpp
   "${PROJECT_SOURCE_DIR}/tools/netprobe/options.cpp"
   net/udp_endpoint_test.cpp
+  audio/audio_packet_test.cpp
+  audio/opus_codec_test.cpp
+  audio/jitter_buffer_test.cpp
+  audio/drift_controller_test.cpp
 )
 target_link_libraries(ministream_tests PRIVATE MiniStream::Core Catch2::Catch2WithMain)
 target_include_directories(ministream_tests PRIVATE "${PROJECT_SOURCE_DIR}/tools")

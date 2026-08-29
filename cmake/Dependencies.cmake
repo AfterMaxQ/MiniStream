@@ -40,9 +40,22 @@ FetchContent_Declare(
 
 FetchContent_Declare(
   opus
-  URL https://github.com/xiph/opus/archive/refs/tags/v${MINISTREAM_OPUS_VERSION}.tar.gz
+  URL https://downloads.xiph.org/releases/opus/opus-${MINISTREAM_OPUS_VERSION}.tar.gz
+  URL_HASH SHA256=65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
+set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(opus)
+if(TARGET Opus::opus)
+  set(MINISTREAM_OPUS_TARGET Opus::opus)
+elseif(TARGET opus)
+  set(MINISTREAM_OPUS_TARGET opus)
+else()
+  message(FATAL_ERROR "Pinned Opus did not provide a CMake library target")
+endif()
 
 if(WIN32)
   FetchContent_Declare(
