@@ -7,6 +7,7 @@ set(MINISTREAM_SDL_VERSION 3.4.14)
 set(MINISTREAM_OPUS_VERSION 1.5.2)
 set(MINISTREAM_SODIUM_VERSION 1.0.20)
 set(MINISTREAM_LEOPARD_COMMIT 6e5725ebdf9da4370b0bcc4f70fa8eb66f4e6198)
+set(MINISTREAM_VIGEMCLIENT_COMMIT 9e91a124d179bf26a878a952153042ac871da243)
 
 if(MINISTREAM_BUILD_TESTS)
   FetchContent_Declare(
@@ -58,6 +59,29 @@ else()
 endif()
 
 if(WIN32)
+  FetchContent_Declare(
+    vigemclient
+    GIT_REPOSITORY https://github.com/nefarius/ViGEmClient.git
+    GIT_TAG ${MINISTREAM_VIGEMCLIENT_COMMIT}
+    GIT_SHALLOW FALSE
+    SOURCE_SUBDIR _ministream_no_add_subdirectory
+  )
+  FetchContent_MakeAvailable(vigemclient)
+  add_library(
+    ministream_vigemclient
+    STATIC
+    "${vigemclient_SOURCE_DIR}/src/ViGEmClient.cpp"
+  )
+  target_include_directories(
+    ministream_vigemclient
+    PUBLIC "${vigemclient_SOURCE_DIR}/include"
+  )
+  target_compile_definitions(ministream_vigemclient PRIVATE _LIB)
+  target_link_libraries(ministream_vigemclient PUBLIC setupapi)
+  if(MSVC)
+    target_compile_options(ministream_vigemclient PRIVATE /W0)
+  endif()
+
   FetchContent_Declare(
     libsodium_prebuilt
     URL https://github.com/jedisct1/libsodium/releases/download/1.0.20-RELEASE/libsodium-1.0.20-msvc.zip

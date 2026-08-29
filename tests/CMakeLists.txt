@@ -36,6 +36,14 @@ target_include_directories(ministream_tests PRIVATE "${PROJECT_SOURCE_DIR}/tools
 ministream_set_warnings(ministream_tests)
 
 if(WIN32)
+  target_sources(
+    ministream_tests
+    PRIVATE
+      windows/host_capabilities_test.cpp
+      windows/dxgi_capture_test.cpp
+      windows/wasapi_loopback_test.cpp
+  )
+  target_link_libraries(ministream_tests PRIVATE ministream_windows_platform)
   add_custom_command(
     TARGET ministream_tests
     POST_BUILD
