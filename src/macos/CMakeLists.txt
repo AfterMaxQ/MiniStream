@@ -1,0 +1,3 @@
+add_executable(ministream_client main.mm)
+target_link_libraries(ministream_client PRIVATE MiniStream::Core)
+ministream_set_warnings(ministream_client)
