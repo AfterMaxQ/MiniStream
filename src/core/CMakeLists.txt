@@ -5,6 +5,11 @@ add_library(
   telemetry/window_stats.cpp
   transport/packetizer.cpp
   transport/reassembler.cpp
+  transport/reliable_control.cpp
+  transport/packet_scheduler.cpp
+  time/clock_sync.cpp
+  net/fault_injector.cpp
+  adaptation/rate_controller.cpp
 )
 add_library(MiniStream::Core ALIAS ministream_core)
 

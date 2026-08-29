@@ -8,6 +8,11 @@ add_executable(
   session/session_state_test.cpp
   transport/packetizer_test.cpp
   transport/reassembler_test.cpp
+  transport/reliable_control_test.cpp
+  transport/packet_scheduler_test.cpp
+  time/clock_sync_test.cpp
+  net/fault_injector_test.cpp
+  adaptation/rate_controller_test.cpp
 )
 target_link_libraries(ministream_tests PRIVATE MiniStream::Core Catch2::Catch2WithMain)
 ministream_set_warnings(ministream_tests)
