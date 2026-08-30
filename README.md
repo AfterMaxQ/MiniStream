@@ -6,7 +6,7 @@ MiniStream is a LAN game-streaming application. The Windows program is the host 
 
 ```text
 Windows Host
-  DXGI Desktop Duplication -> D3D11 texture -> NVENC capability gate
+  DXGI Desktop Duplication -> D3D11 texture -> NVENC -> authenticated UDP
   WASAPI loopback         -> Opus audio packets
   ViGEmBus                <- controller packets
   discovery / pairing / encrypted UDP session
@@ -16,8 +16,8 @@ Windows Host
 macOS Client
   discovery / pairing / encrypted UDP session
   SDL3 controller         -> input packets
-  Opus packets            -> audio output integration point
-  VideoToolbox / Metal    -> video integration point
+  video packets            -> VideoToolbox pixel buffers
+  audio packets            -> CoreAudio output
 
 Shared core
   versioned packets, bounded queues, reassembly, Leopard FEC,
@@ -25,9 +25,9 @@ Shared core
   session lifecycle, rolling telemetry, and libsodium security
 ```
 
-The current `0.1.0` checkout contains the shared transport/security/audio/input foundation, Windows DXGI and WASAPI backends, ViGEmClient integration, LAN discovery, six-digit pairing, and the Qt Quick host/client shell. The Qt shell is deliberately separate from media and network hot paths.
+The current `0.1.0` checkout contains the shared authenticated media transport, Windows DXGI/WASAPI backends, runtime NVENC integration, ViGEmClient integration, macOS VideoToolbox/CoreAudio backends, LAN discovery, six-digit pairing, and the Qt Quick host/client shell. The Qt shell is deliberately separate from media and network hot paths.
 
-The hardware encoder/decoder and the final Metal video surface are not enabled in this checkout. A successful build therefore proves the contracts, capture/audio/controller backends, pairing flow, and packaging path; it does not claim a playable 4K60 session. See the release checklist for the remaining target-machine gates.
+A successful build proves the protocol, capture, codec, audio, controller, pairing, and packaging contracts. The release checklist still requires target-machine validation of the complete 4K60 HDR session.
 
 ## Repository layout
 
@@ -77,7 +77,8 @@ Build the Qt shell by pointing CMake at an installed Qt 6.11.2 tree:
 ```powershell
 cmake -S . -B build-ui -G "Visual Studio 17 2022" -A x64 `
   -DMINISTREAM_BUILD_UI=ON `
-  -DCMAKE_PREFIX_PATH="C:\Qt\6.11.2\msvc2022_64"
+  -DCMAKE_PREFIX_PATH="C:\Qt\6.11.2\msvc2022_64" `
+  -DMINISTREAM_NVENC_SDK_ROOT="C:\SDKs\NVIDIA\Video_Codec_SDK_13.1"
 cmake --build build-ui --config Release
 ```
 
@@ -91,6 +92,7 @@ The CMake options are:
 | `MINISTREAM_BUILD_TOOLS` | `ON` | Build `netprobe` |
 | `MINISTREAM_BUILD_UI` | `OFF` | Build the Qt Quick desktop shell |
 | `MINISTREAM_ENABLE_PACKAGING` | `OFF` | Enable CPack installer generation |
+| `MINISTREAM_NVENC_SDK_ROOT` | empty | NVIDIA Video Codec SDK headers used by the Windows NVENC integration |
 
 Run the UI copy check before committing UI text:
 

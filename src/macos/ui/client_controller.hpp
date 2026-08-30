@@ -26,6 +26,7 @@ namespace ministream {
 
 class VideoToolboxDecoder;
 class CoreAudioOutput;
+class VideoSurfaceBridge;
 
 class ClientController : public QObject {
   Q_OBJECT
@@ -35,6 +36,7 @@ class ClientController : public QObject {
   Q_PROPERTY(bool pairing READ pairing NOTIFY pairingChanged)
   Q_PROPERTY(bool remoteInputActive READ remoteInputActive NOTIFY remoteInputChanged)
   Q_PROPERTY(QString pairingCode READ pairingCode NOTIFY pairingChanged)
+  Q_PROPERTY(QObject* videoSurface READ videoSurface CONSTANT)
 
  public:
   explicit ClientController(QObject* parent = nullptr);
@@ -46,6 +48,7 @@ class ClientController : public QObject {
   [[nodiscard]] bool pairing() const noexcept;
   [[nodiscard]] bool remoteInputActive() const noexcept;
   [[nodiscard]] QString pairingCode() const;
+  [[nodiscard]] QObject* videoSurface() const noexcept;
 
   Q_INVOKABLE void refreshHosts();
   Q_INVOKABLE void connectToHost(int index);
@@ -83,6 +86,7 @@ class ClientController : public QObject {
   std::optional<PairingOffer> peer_offer_;
   std::optional<SessionKeys> session_keys_;
   std::unique_ptr<VideoToolboxDecoder> video_decoder_;
+  std::unique_ptr<VideoSurfaceBridge> video_surface_;
   std::unique_ptr<CoreAudioOutput> audio_output_;
   std::unique_ptr<OpusDecoder48kStereo> audio_decoder_;
   std::unique_ptr<SessionCrypto> crypto_;

@@ -6,6 +6,7 @@
 #include "core/video/codec_config_wire.hpp"
 #include "macos/audio/coreaudio_output.hpp"
 #include "macos/video/videotoolbox_decoder.hpp"
+#include "macos/video/video_surface_bridge.hpp"
 
 #include <chrono>
 #include <random>
@@ -38,12 +39,15 @@ void ClientController::createMediaReceiver() {
       session_id_, session_keys_->tx, session_keys_->rx, 0x4D535443U, 0x4D535448U);
   media_receiver_ = std::make_unique<MediaReceiver>(session_id_, *crypto_);
   video_decoder_ = std::make_unique<VideoToolboxDecoder>();
+  video_surface_ = std::make_unique<VideoSurfaceBridge>();
   audio_decoder_ = std::make_unique<OpusDecoder48kStereo>();
   audio_output_ = std::make_unique<CoreAudioOutput>();
   if (audio_output_) {
     audio_output_->start();
   }
 }
+
+QObject* ClientController::videoSurface() const noexcept { return video_surface_.get(); }
 
 void ClientController::sendDesktopInput(const DesktopInput& input) {
   if (!session_ || !crypto_) {
@@ -79,6 +83,10 @@ void ClientController::pollMedia(const ReceivedDatagram& incoming) {
     if (const auto frame = media_receiver_->receive_video(incoming.datagram, SteadyClock::now());
         frame && video_decoder_) {
       video_decoder_->decode(frame->bytes, frame->capture_timestamp_us);
+      if (const auto latest = video_decoder_->take_latest(); latest && video_surface_) {
+        video_surface_->publish(latest->pixel_buffer, latest->timestamp_us);
+        CVPixelBufferRelease(latest->pixel_buffer);
+      }
     }
   } else if (common->type == PacketType::Audio) {
     if (const auto packet = media_receiver_->receive_audio(incoming.datagram); packet) {
@@ -282,6 +290,7 @@ void ClientController::disconnectSession() {
   audio_output_.reset();
   audio_decoder_.reset();
   video_decoder_.reset();
+  video_surface_.reset();
   expected_audio_sequence_ = 0;
   session_.reset();
   const bool was_connected = connected_;
