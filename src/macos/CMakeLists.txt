@@ -5,22 +5,33 @@ if(MINISTREAM_BUILD_UI)
     "${PROJECT_SOURCE_DIR}/src/app/qt_main.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.hpp"
-    ui/client_controller.cpp
-    ui/client_controller.hpp
+    platform/controlled_backend.mm
+    platform/controlled_backend.hpp
+    platform/remote_backend.mm
+    platform/remote_backend.hpp
     input/sdl_gamepad.mm
     input/sdl_gamepad.hpp
+    input/accessibility_input.mm
+    input/accessibility_input.hpp
+    video/screencapturekit_capture.mm
+    video/screencapturekit_capture.hpp
+    video/videotoolbox_encoder.mm
+    video/videotoolbox_encoder.hpp
     video/videotoolbox_decoder.mm
     video/videotoolbox_decoder.hpp
     video/video_surface_bridge.mm
     video/video_surface_bridge.hpp
     audio/coreaudio_output.mm
     audio/coreaudio_output.hpp
+    audio/coreaudio_capture.mm
+    audio/coreaudio_capture.hpp
   )
   target_link_libraries(
     ministream
     PRIVATE ministream_app MiniStream::Core Qt6::Quick Qt6::Qml Qt6::QuickControls2 SDL3::SDL3
       "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo"
       "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation"
+      "-framework CoreGraphics" "-framework ApplicationServices" "-framework IOSurface"
   )
   ministream_add_qml_ui(ministream)
 else()

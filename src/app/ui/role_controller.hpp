@@ -12,9 +12,6 @@
 
 namespace ministream {
 
-#ifdef __APPLE__
-class ClientController;
-#endif
 class ControlledRuntime;
 class RemoteRuntime;
 
@@ -98,12 +95,9 @@ class RoleController final : public QObject {
   RemoteCapabilities remote_capabilities_;
   QString failure_text_;
   QTimer tick_timer_;
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
   std::unique_ptr<ControlledRuntime> controlled_;
   std::unique_ptr<RemoteRuntime> remote_;
-#endif
-#ifdef __APPLE__
-  std::unique_ptr<ClientController> client_;
 #endif
 };
 
