@@ -23,10 +23,13 @@ std::uint64_t random_nonce() {
 
 RemoteRuntime::RemoteRuntime(std::unique_ptr<RemoteBackend> backend,
                              DiscoveryConfig discovery_config,
-                             DiscoveryInterfaceProvider interface_provider)
+                             DiscoveryInterfaceProvider interface_provider,
+                             SessionTiming timing)
     : backend_(std::move(backend)),
       discovery_config_(std::move(discovery_config)),
-      interface_provider_(std::move(interface_provider)) {
+      interface_provider_(std::move(interface_provider)),
+      timing_(timing),
+      confirmation_retrier_(timing_.confirmation_retry_interval) {
   input_router_ = std::make_unique<RemoteInputRouter>(
       input_capture_, [this](const DesktopInput& input) { return send_input(input); });
 }
@@ -208,8 +211,31 @@ void RemoteRuntime::finish_streaming() {
     disconnect_session();
     return;
   }
+  const auto now = SteadyClock::now();
   state_ = RoleState::Streaming;
   reset_pairing();
+  begin_confirmation_grace(now);
+}
+
+void RemoteRuntime::begin_confirmation_grace(
+    SteadyClock::time_point now) noexcept {
+  confirmation_grace_deadline_ = now + timing_.confirmation_grace;
+  next_confirmation_grace_send_ = now + timing_.confirmation_grace_interval;
+}
+
+void RemoteRuntime::tick_confirmation_grace(SteadyClock::time_point now) {
+  if (!confirmation_grace_deadline_) {
+    return;
+  }
+  if (now >= *confirmation_grace_deadline_) {
+    confirmation_grace_deadline_.reset();
+    next_confirmation_grace_send_.reset();
+    return;
+  }
+  if (next_confirmation_grace_send_ && now >= *next_confirmation_grace_send_) {
+    send_pairing_confirmation(true);
+    next_confirmation_grace_send_ = now + timing_.confirmation_grace_interval;
+  }
 }
 
 void RemoteRuntime::cancel_pairing() {
@@ -389,6 +415,7 @@ void RemoteRuntime::process_datagram(const ReceivedDatagram& incoming) {
       pairing_offer_retrier_.reset();
       send_pairing_offer(SteadyClock::now());
       state_ = RoleState::Pairing;
+      pairing_deadline_ = SteadyClock::now() + timing_.pairing_lease;
       return;
     }
   }
@@ -414,15 +441,20 @@ void RemoteRuntime::process_datagram(const ReceivedDatagram& incoming) {
     return;
   }
 
-  if (const auto accepted = decode_pairing_confirmation(bytes);
-      accepted && state_ == RoleState::Pairing) {
-    if (!*accepted) {
-      disconnect_session();
-      return;
-    }
-    confirmation_.confirm_peer();
-    if (confirmation_.ready()) {
-      finish_streaming();
+  if (const auto accepted = decode_pairing_confirmation(bytes); accepted) {
+    const auto now = SteadyClock::now();
+    if (state_ == RoleState::Pairing) {
+      if (!*accepted) {
+        disconnect_session();
+        return;
+      }
+      confirmation_.confirm_peer();
+      if (confirmation_.ready()) {
+        finish_streaming();
+      }
+    } else if (*accepted && streaming() && confirmation_grace_deadline_ &&
+               now < *confirmation_grace_deadline_) {
+      send_pairing_confirmation(true);
     }
   }
 }
@@ -444,6 +476,10 @@ void RemoteRuntime::tick() {
   if (!session_) {
     return;
   }
+  if (pairing() && pairing_deadline_ && now >= *pairing_deadline_) {
+    disconnect_session();
+    return;
+  }
   if (media_receiver_) {
     const auto unrecoverable_before = media_receiver_->fec_unrecoverable_frames();
     media_receiver_->expire_video(now);
@@ -453,6 +489,9 @@ void RemoteRuntime::tick() {
   }
   if (state_ == RoleState::RemoteConnecting || pairing() || streaming()) {
     for (const auto& incoming : session_->try_receive_batch(512)) {
+      if (session_->peer_locked() && !session_->matches_peer(incoming)) {
+        continue;
+      }
       process_datagram(incoming);
       if (!session_) {
         break;
@@ -484,8 +523,7 @@ void RemoteRuntime::tick() {
       send_pairing_confirmation(true);
       confirmation_retrier_.sent(now);
     } else if (confirmation_retrier_.expired(now)) {
-      disconnect_session();
-      return;
+      confirmation_retrier_.reset();
     }
   }
   if (streaming()) {
@@ -498,6 +536,7 @@ void RemoteRuntime::tick() {
     }
   }
   if (streaming()) {
+    tick_confirmation_grace(now);
     play_audio(now);
   }
   if (streaming() && input_capture_.routes_to_remote(InputDevice::Gamepad) && backend_) {
@@ -644,6 +683,9 @@ void RemoteRuntime::disconnect_session() noexcept {
   handshake_retrier_.reset();
   pairing_offer_retrier_.reset();
   confirmation_retrier_.reset();
+  pairing_deadline_.reset();
+  confirmation_grace_deadline_.reset();
+  next_confirmation_grace_send_.reset();
   last_keyframe_request_.reset();
   last_feedback_send_.reset();
   feedback_sequence_ = 0;
@@ -657,6 +699,9 @@ void RemoteRuntime::disconnect_session() noexcept {
 
 void RemoteRuntime::reset_pairing() noexcept {
   pairing_code_.clear();
+  pairing_deadline_.reset();
+  confirmation_grace_deadline_.reset();
+  next_confirmation_grace_send_.reset();
   local_offer_.reset();
   peer_offer_.reset();
   confirmation_ = PairingConfirmation{};

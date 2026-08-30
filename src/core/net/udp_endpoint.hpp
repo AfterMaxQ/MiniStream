@@ -38,6 +38,7 @@ class UdpEndpoint {
   Result<void, NetError> lock_peer(const ReceivedDatagram& incoming);
   void clear_peer() noexcept;
   [[nodiscard]] bool peer_locked() const noexcept;
+  [[nodiscard]] bool matches_peer(const ReceivedDatagram& incoming) const noexcept;
   [[nodiscard]] std::uint16_t local_port() const;
 
  private:

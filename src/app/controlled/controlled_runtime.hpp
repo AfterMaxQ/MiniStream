@@ -14,6 +14,7 @@
 #include "core/session/discovery.hpp"
 #include "core/session/role.hpp"
 #include "core/session/handshake.hpp"
+#include "core/session/session_timing.hpp"
 #include "core/telemetry/feedback_wire.hpp"
 #include "core/telemetry/stream_aggregator.hpp"
 #include "platform/controlled_backend.hpp"
@@ -33,7 +34,8 @@ class ControlledRuntime {
  public:
   ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
                     DiscoveryAdvertisement advertisement,
-                    DiscoveryConfig discovery_config = {});
+                    DiscoveryConfig discovery_config = {},
+                    SessionTiming timing = {});
   ~ControlledRuntime();
 
   ControlledRuntime(const ControlledRuntime&) = delete;
@@ -65,12 +67,16 @@ class ControlledRuntime {
   void send_pending_rumble();
   void apply_feedback(const FeedbackReport& report);
   void clear_peer_session() noexcept;
+  void finish_streaming(SteadyClock::time_point now);
+  void begin_confirmation_grace(SteadyClock::time_point now) noexcept;
+  void tick_confirmation_grace(SteadyClock::time_point now);
   void send_pairing_confirmation(bool accepted);
   void send_input_ack(ControlSeq sequence);
 
   std::unique_ptr<ControlledBackend> backend_;
   DiscoveryAdvertisement advertisement_;
   DiscoveryConfig discovery_config_;
+  SessionTiming timing_;
   RoleState state_{RoleState::Idle};
   std::unique_ptr<DiscoveryHost> discovery_;
   std::unique_ptr<UdpEndpoint> session_;
@@ -87,6 +93,10 @@ class ControlledRuntime {
   std::optional<DeviceIdentity> identity_;
   std::optional<EphemeralKeyPair> ephemeral_;
   std::optional<Hello> peer_hello_;
+  std::optional<SteadyClock::time_point> peer_handshake_deadline_;
+  std::optional<SteadyClock::time_point> pairing_deadline_;
+  std::optional<SteadyClock::time_point> confirmation_grace_deadline_;
+  std::optional<SteadyClock::time_point> next_confirmation_grace_send_;
   std::optional<PairingOffer> peer_offer_;
   std::optional<PairingOffer> local_offer_;
   std::optional<SessionKeys> session_keys_;

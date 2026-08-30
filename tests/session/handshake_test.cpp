@@ -1,4 +1,5 @@
 #include "core/session/handshake.hpp"
+#include "core/session/session_timing.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -82,4 +83,15 @@ TEST_CASE("pairing messages retry four times and then expire") {
   REQUIRE(retrier.expired(start + 1000ms));
   retrier.reset();
   REQUIRE(retrier.due(start + 1000ms));
+}
+
+TEST_CASE("session timing leaves human confirmation separate from packet retries") {
+  const SessionTiming timing;
+  REQUIRE(timing.handshake_lease == 2s);
+  REQUIRE(timing.pairing_lease == 60s);
+  REQUIRE(timing.confirmation_retry_interval == 250ms);
+  REQUIRE(timing.confirmation_grace == 1s);
+  REQUIRE(timing.confirmation_grace_interval == 100ms);
+  REQUIRE(timing.heartbeat_interval == 500ms);
+  REQUIRE(timing.liveness_timeout == 3s);
 }

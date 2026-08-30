@@ -18,6 +18,7 @@
 #include "core/session/discovery.hpp"
 #include "core/session/handshake.hpp"
 #include "core/session/role.hpp"
+#include "core/session/session_timing.hpp"
 #include "core/telemetry/feedback_wire.hpp"
 #include "core/telemetry/stream_aggregator.hpp"
 #include "core/transport/reliable_control.hpp"
@@ -37,7 +38,8 @@ class RemoteRuntime {
  public:
   explicit RemoteRuntime(std::unique_ptr<RemoteBackend> backend,
                          DiscoveryConfig discovery_config = {},
-                         DiscoveryInterfaceProvider interface_provider = {});
+                         DiscoveryInterfaceProvider interface_provider = {},
+                         SessionTiming timing = {});
   ~RemoteRuntime();
 
   RemoteRuntime(const RemoteRuntime&) = delete;
@@ -80,12 +82,15 @@ class RemoteRuntime {
   void send_pairing_offer(SteadyClock::time_point now);
   void send_pairing_confirmation(bool accepted);
   void finish_streaming();
+  void begin_confirmation_grace(SteadyClock::time_point now) noexcept;
+  void tick_confirmation_grace(SteadyClock::time_point now);
   void request_keyframe(SteadyClock::time_point now);
   void send_feedback(SteadyClock::time_point now);
 
   std::unique_ptr<RemoteBackend> backend_;
   DiscoveryConfig discovery_config_;
   DiscoveryInterfaceProvider interface_provider_;
+  SessionTiming timing_;
   RoleState state_{RoleState::Idle};
   std::vector<DiscoveredHost> hosts_;
   std::optional<DiscoveredHost> selected_host_;
@@ -108,6 +113,9 @@ class RemoteRuntime {
   PairingMessageRetrier pairing_offer_retrier_;
   PairingMessageRetrier confirmation_retrier_;
   PairingConfirmation confirmation_;
+  std::optional<SteadyClock::time_point> pairing_deadline_;
+  std::optional<SteadyClock::time_point> confirmation_grace_deadline_;
+  std::optional<SteadyClock::time_point> next_confirmation_grace_send_;
   std::string pairing_code_;
   std::uint64_t selected_min_bitrate_bps_{};
   std::uint64_t selected_max_bitrate_bps_{};

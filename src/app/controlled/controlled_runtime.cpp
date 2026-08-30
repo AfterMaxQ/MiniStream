@@ -26,10 +26,12 @@ std::uint64_t random_nonce() {
 
 ControlledRuntime::ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
                                      DiscoveryAdvertisement advertisement,
-                                     DiscoveryConfig discovery_config)
+                                     DiscoveryConfig discovery_config,
+                                     SessionTiming timing)
     : backend_(std::move(backend)),
       advertisement_(std::move(advertisement)),
       discovery_config_(std::move(discovery_config)),
+      timing_(timing),
       reliable_input_receiver_([this](const DesktopInput& input) {
         if (!backend_) {
           return false;
@@ -39,7 +41,8 @@ ControlledRuntime::ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
           return true;
         }
         return backend_->inject_input(input);
-      }) {
+      }),
+      confirmation_retrier_(timing_.confirmation_retry_interval) {
   advertisement_.controllable = false;
 }
 
@@ -113,6 +116,10 @@ void ControlledRuntime::stop() noexcept {
   identity_.reset();
   ephemeral_.reset();
   peer_hello_.reset();
+  peer_handshake_deadline_.reset();
+  pairing_deadline_.reset();
+  confirmation_grace_deadline_.reset();
+  next_confirmation_grace_send_.reset();
   peer_offer_.reset();
   local_offer_.reset();
   session_keys_.reset();
@@ -202,6 +209,13 @@ void ControlledRuntime::confirm_pairing() {
   if (!confirmation_.ready() || !ephemeral_ || !peer_offer_) {
     return;
   }
+  finish_streaming(now);
+}
+
+void ControlledRuntime::finish_streaming(SteadyClock::time_point now) {
+  if (!ephemeral_ || !peer_offer_) {
+    return;
+  }
   const auto keys = derive_session_keys(*ephemeral_, peer_offer_->ephemeral, false);
   if (!keys) {
     stop();
@@ -215,6 +229,28 @@ void ControlledRuntime::confirm_pairing() {
   }
   state_ = RoleState::Streaming;
   reset_pairing();
+  begin_confirmation_grace(now);
+}
+
+void ControlledRuntime::begin_confirmation_grace(
+    SteadyClock::time_point now) noexcept {
+  confirmation_grace_deadline_ = now + timing_.confirmation_grace;
+  next_confirmation_grace_send_ = now + timing_.confirmation_grace_interval;
+}
+
+void ControlledRuntime::tick_confirmation_grace(SteadyClock::time_point now) {
+  if (!confirmation_grace_deadline_) {
+    return;
+  }
+  if (now >= *confirmation_grace_deadline_) {
+    confirmation_grace_deadline_.reset();
+    next_confirmation_grace_send_.reset();
+    return;
+  }
+  if (next_confirmation_grace_send_ && now >= *next_confirmation_grace_send_) {
+    send_pairing_confirmation(true);
+    next_confirmation_grace_send_ = now + timing_.confirmation_grace_interval;
+  }
 }
 
 void ControlledRuntime::cancel_pairing() {
@@ -277,7 +313,8 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
     }
   }
 
-  if (const auto hello = decode_hello(bytes); hello && session_) {
+  if (const auto hello = decode_hello(bytes);
+      hello && session_ && state_ == RoleState::Broadcasting) {
     if (peer_hello_ && *peer_hello_ != *hello) {
       return;
     }
@@ -327,6 +364,7 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
       negotiated_height_ = hello->height;
       negotiated_fps_ = hello->fps;
     }
+    peer_handshake_deadline_ = SteadyClock::now() + timing_.handshake_lease;
     session_->reply(encode_accept(
         {HandshakeRole::Controlled, session_id_, hello->codec, hello->hdr10, hello->width,
          hello->height, hello->fps, negotiated_bitrate_, hello->nonce}));
@@ -336,7 +374,7 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
   if (const auto offer = decode_pairing_offer(bytes);
       offer && (state_ == RoleState::Broadcasting || state_ == RoleState::Pairing) &&
       offer->role == PairingRole::Initiator && identity_ && ephemeral_ && session_) {
-    if (!peer_hello_) {
+    if (!peer_hello_ || offer->nonce != peer_hello_->nonce) {
       return;
     }
     if (peer_offer_ && *peer_offer_ != *offer) {
@@ -355,32 +393,29 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
     if (pairing_code_.size() < 6) {
       pairing_code_.insert(pairing_code_.begin(), 6 - pairing_code_.size(), '0');
     }
-    state_ = RoleState::Pairing;
+    if (state_ == RoleState::Broadcasting) {
+      state_ = RoleState::Pairing;
+      peer_handshake_deadline_.reset();
+      pairing_deadline_ = SteadyClock::now() + timing_.pairing_lease;
+    }
     session_->reply(encode_pairing_offer(*local_offer_));
     return;
   }
 
-  if (const auto accepted = decode_pairing_confirmation(bytes);
-      accepted && state_ == RoleState::Pairing && session_) {
-    if (!*accepted) {
-      clear_peer_session();
-      return;
-    }
-    confirmation_.confirm_peer();
-    if (confirmation_.ready() && ephemeral_ && peer_offer_) {
-      const auto keys = derive_session_keys(*ephemeral_, peer_offer_->ephemeral, false);
-      if (!keys) {
-        stop();
+  if (const auto accepted = decode_pairing_confirmation(bytes); accepted && session_) {
+    const auto now = SteadyClock::now();
+    if (state_ == RoleState::Pairing) {
+      if (!*accepted) {
+        clear_peer_session();
         return;
       }
-      session_keys_ = *keys;
-      create_media_sender();
-      if (!media_sender_) {
-        stop();
-        return;
+      confirmation_.confirm_peer();
+      if (confirmation_.ready() && ephemeral_ && peer_offer_) {
+        finish_streaming(now);
       }
-      state_ = RoleState::Streaming;
-      reset_pairing();
+    } else if (*accepted && streaming() && confirmation_grace_deadline_ &&
+               now < *confirmation_grace_deadline_) {
+      send_pairing_confirmation(true);
     }
   }
 }
@@ -498,9 +533,23 @@ void ControlledRuntime::tick() {
   if (!hosting() || !discovery_ || !session_) {
     return;
   }
-  discovery_->poll(advertisement_);
   const auto now = SteadyClock::now();
+  if (state_ == RoleState::Broadcasting && peer_hello_ &&
+      peer_handshake_deadline_ && now >= *peer_handshake_deadline_) {
+    clear_peer_session();
+  }
+  if (pairing() && pairing_deadline_ && now >= *pairing_deadline_) {
+    send_pairing_confirmation(false);
+    clear_peer_session();
+    return;
+  }
+  if (state_ == RoleState::Broadcasting && !session_->peer_locked()) {
+    (void)discovery_->poll(advertisement_);
+  }
   for (const auto& incoming : session_->try_receive_batch(512)) {
+    if (session_->peer_locked() && !session_->matches_peer(incoming)) {
+      continue;
+    }
     process_datagram(incoming);
   }
   if (pairing() && confirmation_.local_confirmed() && !confirmation_.ready()) {
@@ -508,14 +557,13 @@ void ControlledRuntime::tick() {
       send_pairing_confirmation(true);
       confirmation_retrier_.sent(now);
     } else if (confirmation_retrier_.expired(now)) {
-      send_pairing_confirmation(false);
-      clear_peer_session();
-      return;
+      confirmation_retrier_.reset();
     }
   }
   if (!streaming()) {
     return;
   }
+  tick_confirmation_grace(now);
   send_pending_rumble();
   send_pending_video(now);
   send_pending_audio(now);
@@ -580,6 +628,9 @@ void ControlledRuntime::clear_peer_session() noexcept {
   reliable_input_receiver_.reset();
   session_keys_.reset();
   peer_hello_.reset();
+  peer_handshake_deadline_.reset();
+  confirmation_grace_deadline_.reset();
+  next_confirmation_grace_send_.reset();
   ephemeral_.reset();
   last_codec_config_sent_.reset();
   last_codec_config_send_.reset();
@@ -598,6 +649,9 @@ void ControlledRuntime::clear_peer_session() noexcept {
 void ControlledRuntime::reset_pairing() noexcept {
   const bool was_pairing = pairing();
   pairing_code_.clear();
+  pairing_deadline_.reset();
+  confirmation_grace_deadline_.reset();
+  next_confirmation_grace_send_.reset();
   peer_offer_.reset();
   local_offer_.reset();
   confirmation_ = PairingConfirmation{};

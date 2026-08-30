@@ -198,6 +198,15 @@ void UdpEndpoint::clear_peer() noexcept {
 
 bool UdpEndpoint::peer_locked() const noexcept { return peer_locked_ && remote_.has_value(); }
 
+bool UdpEndpoint::matches_peer(const ReceivedDatagram& incoming) const noexcept {
+  if (!peer_locked()) {
+    return false;
+  }
+  asio::error_code error;
+  const auto address = asio::ip::make_address(incoming.sender_address, error);
+  return !error && address == remote_->address() && incoming.sender_port == remote_->port();
+}
+
 std::uint16_t UdpEndpoint::local_port() const {
   asio::error_code error;
   const auto endpoint = socket_.local_endpoint(error);

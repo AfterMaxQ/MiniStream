@@ -4,6 +4,7 @@
 #include "core/time/clock.hpp"
 #include "core/video/codec_config.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -61,6 +62,8 @@ class HandshakeRetrier {
 
 class PairingMessageRetrier {
  public:
+  explicit PairingMessageRetrier(
+      Microseconds interval = std::chrono::milliseconds{250}) noexcept;
   [[nodiscard]] bool due(SteadyClock::time_point now) const noexcept;
   [[nodiscard]] bool expired(SteadyClock::time_point now) const noexcept;
   void sent(SteadyClock::time_point now) noexcept;
@@ -68,6 +71,7 @@ class PairingMessageRetrier {
 
  private:
   static constexpr unsigned kMaxSends = 4;
+  Microseconds interval_;
   std::optional<SteadyClock::time_point> last_send_;
   unsigned send_count_{};
 };

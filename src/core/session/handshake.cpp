@@ -141,14 +141,17 @@ bool HandshakeRetrier::expired(SteadyClock::time_point now) const noexcept {
          now - *last_send_ >= std::chrono::milliseconds{250};
 }
 
+PairingMessageRetrier::PairingMessageRetrier(Microseconds interval) noexcept
+    : interval_(interval) {}
+
 bool PairingMessageRetrier::due(SteadyClock::time_point now) const noexcept {
   return send_count_ < kMaxSends &&
-         (!last_send_ || now - *last_send_ >= std::chrono::milliseconds{250});
+         (!last_send_ || now - *last_send_ >= interval_);
 }
 
 bool PairingMessageRetrier::expired(SteadyClock::time_point now) const noexcept {
   return send_count_ >= kMaxSends && last_send_ &&
-         now - *last_send_ >= std::chrono::milliseconds{250};
+         now - *last_send_ >= interval_;
 }
 
 void PairingMessageRetrier::sent(SteadyClock::time_point now) noexcept {

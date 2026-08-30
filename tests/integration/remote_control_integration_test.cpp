@@ -10,7 +10,9 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <thread>
 #include <vector>
@@ -189,6 +191,32 @@ void pump(ControlledRuntime& controlled, RemoteRuntime& remote, unsigned rounds 
   }
 }
 
+std::optional<ReceivedDatagram> wait_for_datagram(
+    UdpEndpoint& endpoint, const std::function<void()>& pump_once,
+    const std::function<bool(std::span<const std::byte>)>& matches,
+    unsigned rounds = 300U) {
+  for (unsigned attempt = 0; attempt < rounds; ++attempt) {
+    pump_once();
+    while (const auto incoming = endpoint.try_receive()) {
+      if (matches(incoming->datagram.bytes)) {
+        return incoming;
+      }
+    }
+    std::this_thread::sleep_for(1ms);
+  }
+  return std::nullopt;
+}
+
+void drain(UdpEndpoint& endpoint) {
+  while (endpoint.try_receive()) {
+  }
+}
+
+Hello loopback_hello(std::uint64_t nonce) {
+  return {HandshakeRole::Controller, VideoCodec::H264, false, 1920, 1080, 60,
+          20'000'000, nonce};
+}
+
 }  // namespace
 
 TEST_CASE("loopback control session completes handshake pairing and media") {
@@ -364,4 +392,266 @@ TEST_CASE("UDP receive batch drains a five-thousand packet burst") {
     }
   }
   REQUIRE(received == packet_count);
+}
+
+TEST_CASE("controlled runtime expires an abandoned Hello and hides while busy") {
+  const auto discovery_port = unused_udp_port();
+  DiscoveryConfig discovery_config;
+  discovery_config.port = discovery_port;
+  discovery_config.retry_interval = 5ms;
+  discovery_config.target_override = {{127, 0, 0, 1}};
+
+  SessionTiming timing;
+  timing.handshake_lease = 70ms;
+  timing.pairing_lease = 200ms;
+
+  ControlledRuntime controlled(std::make_unique<LoopbackControlledBackend>(),
+                               advertisement(), discovery_config, timing);
+  REQUIRE(controlled.start());
+
+  UdpEndpoint first_controller;
+  REQUIRE(first_controller.bind(0));
+  REQUIRE(first_controller.set_remote("127.0.0.1",
+                                      controlled.advertisement().session_port));
+  const auto first_hello = loopback_hello(1001);
+  REQUIRE(first_controller.send(encode_hello(first_hello)));
+  REQUIRE(wait_for_datagram(
+      first_controller, [&] { controlled.tick(); },
+      [](std::span<const std::byte> bytes) { return decode_accept(bytes).has_value(); }));
+
+  DiscoveryClient busy_search(discovery_config);
+  REQUIRE(busy_search.start(20ms));
+  DiscoveryPollResult busy_result;
+  for (unsigned attempt = 0; attempt < 100U && busy_search.active(); ++attempt) {
+    controlled.tick();
+    busy_result = busy_search.poll();
+    std::this_thread::sleep_for(1ms);
+  }
+  REQUIRE(busy_result.state == DiscoveryState::Complete);
+  REQUIRE(busy_result.hosts.empty());
+
+  UdpEndpoint second_controller;
+  REQUIRE(second_controller.bind(0));
+  REQUIRE(second_controller.set_remote("127.0.0.1",
+                                       controlled.advertisement().session_port));
+  const auto second_hello = loopback_hello(2002);
+  REQUIRE(second_controller.send(encode_hello(second_hello)));
+  for (unsigned attempt = 0; attempt < 10U; ++attempt) {
+    controlled.tick();
+    std::this_thread::sleep_for(1ms);
+  }
+  REQUIRE_FALSE(second_controller.try_receive().has_value());
+
+  for (unsigned attempt = 0; attempt < 90U; ++attempt) {
+    controlled.tick();
+    std::this_thread::sleep_for(1ms);
+  }
+  REQUIRE(controlled.state() == RoleState::Broadcasting);
+  REQUIRE(second_controller.send(encode_hello(second_hello)));
+  REQUIRE(wait_for_datagram(
+      second_controller, [&] { controlled.tick(); },
+      [](std::span<const std::byte> bytes) { return decode_accept(bytes).has_value(); }));
+}
+
+TEST_CASE("controlled pairing survives retry exhaustion and converges in grace") {
+  const auto discovery_port = unused_udp_port();
+  DiscoveryConfig discovery_config;
+  discovery_config.port = discovery_port;
+  discovery_config.target_override = {{127, 0, 0, 1}};
+
+  SessionTiming timing;
+  timing.handshake_lease = 100ms;
+  timing.pairing_lease = 2s;
+  timing.confirmation_retry_interval = 1ms;
+  timing.confirmation_grace = 500ms;
+  timing.confirmation_grace_interval = 5ms;
+
+  ControlledRuntime controlled(std::make_unique<LoopbackControlledBackend>(),
+                               advertisement(), discovery_config, timing);
+  REQUIRE(controlled.start());
+
+  UdpEndpoint controller;
+  REQUIRE(controller.bind(0));
+  REQUIRE(controller.set_remote("127.0.0.1",
+                                controlled.advertisement().session_port));
+  const auto hello = loopback_hello(3003);
+  REQUIRE(controller.send(encode_hello(hello)));
+  REQUIRE(wait_for_datagram(
+      controller, [&] { controlled.tick(); },
+      [](std::span<const std::byte> bytes) { return decode_accept(bytes).has_value(); }));
+
+  const auto identity = generate_identity();
+  const auto ephemeral = generate_ephemeral_keypair();
+  REQUIRE(identity);
+  REQUIRE(ephemeral);
+  const PairingOffer offer{PairingRole::Initiator, hello.nonce,
+                           identity->public_key, ephemeral->public_key};
+  auto wrong_nonce = offer;
+  ++wrong_nonce.nonce;
+  REQUIRE(controller.send(encode_pairing_offer(wrong_nonce)));
+  for (unsigned attempt = 0; attempt < 5U; ++attempt) {
+    controlled.tick();
+    std::this_thread::sleep_for(1ms);
+  }
+  REQUIRE_FALSE(controlled.pairing());
+  drain(controller);
+
+  REQUIRE(controller.send(encode_pairing_offer(offer)));
+  REQUIRE(wait_for_datagram(
+      controller, [&] { controlled.tick(); },
+      [](std::span<const std::byte> bytes) {
+        const auto response = decode_pairing_offer(bytes);
+        return response && response->role == PairingRole::Responder;
+      }));
+  REQUIRE(controlled.pairing());
+
+  controlled.confirm_pairing();
+  for (unsigned attempt = 0; attempt < 20U; ++attempt) {
+    controlled.tick();
+    std::this_thread::sleep_for(1ms);
+  }
+  INFO("controlled state after confirmation retries="
+       << static_cast<int>(controlled.state()));
+  REQUIRE(controlled.pairing());
+  drain(controller);
+
+  REQUIRE(controller.send(encode_pairing_confirmation(true)));
+  controlled.tick();
+  REQUIRE(controlled.streaming());
+  drain(controller);
+
+  REQUIRE(controller.send(encode_pairing_confirmation(true)));
+  REQUIRE(wait_for_datagram(
+      controller, [&] { controlled.tick(); },
+      [](std::span<const std::byte> bytes) {
+        const auto accepted = decode_pairing_confirmation(bytes);
+        return accepted && *accepted;
+      }));
+}
+
+TEST_CASE("controlled runtime expires an abandoned human pairing") {
+  const auto discovery_port = unused_udp_port();
+  DiscoveryConfig discovery_config;
+  discovery_config.port = discovery_port;
+  discovery_config.target_override = {{127, 0, 0, 1}};
+
+  SessionTiming timing;
+  timing.handshake_lease = 100ms;
+  timing.pairing_lease = 25ms;
+
+  ControlledRuntime controlled(std::make_unique<LoopbackControlledBackend>(),
+                               advertisement(), discovery_config, timing);
+  REQUIRE(controlled.start());
+
+  UdpEndpoint controller;
+  REQUIRE(controller.bind(0));
+  REQUIRE(controller.set_remote("127.0.0.1",
+                                controlled.advertisement().session_port));
+  const auto hello = loopback_hello(4004);
+  REQUIRE(controller.send(encode_hello(hello)));
+  REQUIRE(wait_for_datagram(
+      controller, [&] { controlled.tick(); },
+      [](std::span<const std::byte> bytes) { return decode_accept(bytes).has_value(); }));
+
+  const auto identity = generate_identity();
+  const auto ephemeral = generate_ephemeral_keypair();
+  REQUIRE(identity);
+  REQUIRE(ephemeral);
+  REQUIRE(controller.send(encode_pairing_offer(
+      {PairingRole::Initiator, hello.nonce, identity->public_key,
+       ephemeral->public_key})));
+  REQUIRE(wait_for_datagram(
+      controller, [&] { controlled.tick(); },
+      [](std::span<const std::byte> bytes) {
+        return decode_pairing_offer(bytes).has_value();
+      }));
+  REQUIRE(controlled.pairing());
+
+  for (unsigned attempt = 0; attempt < 40U; ++attempt) {
+    controlled.tick();
+    std::this_thread::sleep_for(1ms);
+  }
+  REQUIRE(controlled.state() == RoleState::Broadcasting);
+}
+
+TEST_CASE("remote pairing replies during post-confirmation grace") {
+  const auto discovery_port = unused_udp_port();
+  DiscoveryConfig discovery_config;
+  discovery_config.port = discovery_port;
+  discovery_config.retry_interval = 5ms;
+  discovery_config.target_override = {{127, 0, 0, 1}};
+
+  SessionTiming timing;
+  timing.pairing_lease = 2s;
+  timing.confirmation_retry_interval = 1ms;
+  timing.confirmation_grace = 500ms;
+  timing.confirmation_grace_interval = 5ms;
+
+  DiscoveryHost discovery_host;
+  REQUIRE(discovery_host.start(discovery_config));
+  UdpEndpoint controlled_peer;
+  REQUIRE(controlled_peer.bind(0));
+  auto peer_advertisement = advertisement();
+  peer_advertisement.session_port = controlled_peer.local_port();
+
+  RemoteRuntime remote(std::make_unique<LoopbackRemoteBackend>(), discovery_config,
+                       DiscoveryInterfaceProvider{}, timing);
+  REQUIRE(remote.start());
+  REQUIRE(remote.begin_discovery(80ms));
+  for (unsigned attempt = 0;
+       attempt < 200U && remote.discovery_state() == DiscoveryState::Searching;
+       ++attempt) {
+    REQUIRE(discovery_host.poll(peer_advertisement));
+    remote.tick();
+    std::this_thread::sleep_for(1ms);
+  }
+  REQUIRE(remote.hosts().size() == 1);
+  REQUIRE(remote.connect(0));
+
+  const auto hello_datagram = wait_for_datagram(
+      controlled_peer, [&] { remote.tick(); },
+      [](std::span<const std::byte> bytes) { return decode_hello(bytes).has_value(); });
+  REQUIRE(hello_datagram);
+  const auto hello = decode_hello(hello_datagram->datagram.bytes);
+  REQUIRE(hello);
+  REQUIRE(controlled_peer.lock_peer(*hello_datagram));
+  REQUIRE(controlled_peer.reply(encode_accept(
+      {HandshakeRole::Controlled, 77, hello->codec, hello->hdr10, hello->width,
+       hello->height, hello->fps, hello->target_bitrate_bps, hello->nonce})));
+
+  const auto offer_datagram = wait_for_datagram(
+      controlled_peer, [&] { remote.tick(); },
+      [](std::span<const std::byte> bytes) {
+        const auto offer = decode_pairing_offer(bytes);
+        return offer && offer->role == PairingRole::Initiator;
+      });
+  REQUIRE(offer_datagram);
+  const auto initiator_offer = decode_pairing_offer(offer_datagram->datagram.bytes);
+  REQUIRE(initiator_offer);
+  const auto identity = generate_identity();
+  const auto ephemeral = generate_ephemeral_keypair();
+  REQUIRE(identity);
+  REQUIRE(ephemeral);
+  REQUIRE(controlled_peer.reply(encode_pairing_offer(
+      {PairingRole::Responder, 5005, identity->public_key, ephemeral->public_key})));
+  for (unsigned attempt = 0; attempt < 100U && remote.pairing_code().empty(); ++attempt) {
+    remote.tick();
+    std::this_thread::sleep_for(1ms);
+  }
+  REQUIRE(remote.pairing());
+  REQUIRE_FALSE(remote.pairing_code().empty());
+
+  REQUIRE(controlled_peer.reply(encode_pairing_confirmation(true)));
+  remote.tick();
+  remote.confirm_pairing();
+  REQUIRE(remote.streaming());
+  drain(controlled_peer);
+
+  REQUIRE(controlled_peer.reply(encode_pairing_confirmation(true)));
+  REQUIRE(wait_for_datagram(
+      controlled_peer, [&] { remote.tick(); },
+      [](std::span<const std::byte> bytes) {
+        const auto accepted = decode_pairing_confirmation(bytes);
+        return accepted && *accepted;
+      }));
 }

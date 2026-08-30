@@ -88,3 +88,23 @@ TEST_CASE("UDP endpoint keeps a locked peer while ignoring stray senders") {
   receiver.clear_peer();
   REQUIRE_FALSE(receiver.peer_locked());
 }
+
+TEST_CASE("UDP endpoint rechecks prefetched datagrams after locking a peer") {
+  UdpEndpoint receiver;
+  UdpEndpoint first_sender;
+  UdpEndpoint second_sender;
+  REQUIRE(receiver.bind(0));
+  REQUIRE(first_sender.bind(0));
+  REQUIRE(second_sender.bind(0));
+  REQUIRE(first_sender.set_remote("127.0.0.1", receiver.local_port()));
+  REQUIRE(second_sender.set_remote("127.0.0.1", receiver.local_port()));
+
+  REQUIRE(first_sender.send(std::vector<std::byte>{std::byte{0x01}}));
+  REQUIRE(second_sender.send(std::vector<std::byte>{std::byte{0x02}}));
+  const auto prefetched = receiver.try_receive_batch(2);
+  REQUIRE(prefetched.size() == 2);
+
+  REQUIRE(receiver.lock_peer(prefetched.front()));
+  REQUIRE(receiver.matches_peer(prefetched.front()));
+  REQUIRE_FALSE(receiver.matches_peer(prefetched.back()));
+}
