@@ -40,16 +40,19 @@ Windows 保持 D3D11 纹理，在 macOS 保持 `CVPixelBuffer`/Metal 纹理，QM
 3. 点击 **Connect**。两台设备会显示同一个六位配对码；只有确认两边代码
    一致后才会开始串流。
 4. 串流页面点击 **Control remote** 将键盘、鼠标和可用手柄发送到远端；
-   点击 **Use this device** 立即恢复本机输入。断开连接、切换顶部角色、
-   关闭窗口和配对取消也会释放输入。
+   点击 **Use this device** 立即恢复本机输入。窗口失去焦点、断开连接、切换
+   顶部角色、关闭窗口和配对取消也会释放输入。
 
 输入捕获只在 MiniStream 窗口内生效，不安装全局键盘或鼠标钩子。为避免和
 游戏菜单快捷键冲突，远程输入开启时 Esc 和 F11 会发送到远端；退出控制请
-点击 **Use this device**。本机模式下：
+点击 **Use this device**，也可以使用始终由本机处理的保留组合键：
 
-- Windows/Linux：`Ctrl+Alt+R` 切换远程输入；
-- macOS：`⌘+Option+R` 切换远程输入；
+- Windows/Linux：`Ctrl+Alt+Shift+R` 切换远程输入；
+- macOS：`⌘+Option+Shift+R` 切换远程输入；
 - `F11` 切换全屏，非远程输入模式下 `Esc` 退出全屏。
+
+两端必须运行相同的协议版本。v0.2.2 不与 v0.2.1 及更早版本建立会话；
+升级时请同时替换控制端和被控制端。
 
 ## 从源码构建
 
@@ -78,6 +81,10 @@ ctest --test-dir build-ui -C Debug --output-on-failure
 47990 discovery 和动态 session 端口，不会开放 Public Network。拒绝后需在
 Windows Defender Firewall 中为程序允许 Private Network 入站流量，才能发现
 或接受连接。
+
+Windows 被控制端当前使用 SDR 编码路径。开启 Windows HDR 时，应用会在
+**Allow control** 前提示关闭该显示器的 HDR，不会广播一个无法输出画面的
+会话；Windows 作为控制端接收视频不受此限制。
 
 ### macOS
 
@@ -145,9 +152,11 @@ cpack --config build-release/CPackConfig.cmake -C Release
 ## 当前版本边界
 
 - 仅支持同一局域网内的发现和连接，不包含账号、云服务、NAT 穿透或多控制器。
-- 编解码器和 HDR 状态由本机硬件能力决定；4K60、HEVC Main10/HDR10 和长时间
-  串流需要在目标 Windows/macOS 设备及显示器上单独验收。
+- Windows 被控制端当前只接受 SDR 桌面捕获；4K60、HEVC Main10/HDR10 和
+  长时间串流仍需要在目标 Windows/macOS 设备及显示器上单独验收。
+- 鼠标移动使用窗口内位置差值，不是系统级 raw relative mouse；桌面操作可用，
+  FPS/TPS 的无限连续转向尚不属于当前版本能力。
 - macOS 的屏幕录制、辅助功能和音频权限由系统控制；Windows 手柄输入需要
   ViGEmBus，键盘鼠标不依赖该驱动。
 
-发布检查项见 [`docs/release/v0.2-functional-reliability-checklist.md`](docs/release/v0.2-functional-reliability-checklist.md)。
+发布检查项见 [`docs/release/v0.2.2-connection-input-reliability-checklist.md`](docs/release/v0.2.2-connection-input-reliability-checklist.md)。
