@@ -38,6 +38,12 @@ class DxgiCapture {
   Result<void, CaptureError> initialize();
   Result<CapturedFrame, CaptureError> acquire(Microseconds timeout);
 
+  // The encoder registers the captured texture on this same device. The
+  // returned interfaces are owned by DxgiCapture and remain valid until the
+  // capture object is destroyed or moved from.
+  [[nodiscard]] ID3D11Device* device() const noexcept;
+  [[nodiscard]] ID3D11DeviceContext* context() const noexcept;
+
  private:
   struct Impl;
   std::unique_ptr<Impl> impl_;

@@ -7,10 +7,16 @@ if(MINISTREAM_BUILD_UI)
     ui/client_controller.hpp
     input/sdl_gamepad.mm
     input/sdl_gamepad.hpp
+    video/videotoolbox_decoder.mm
+    video/videotoolbox_decoder.hpp
+    audio/coreaudio_output.mm
+    audio/coreaudio_output.hpp
   )
   target_link_libraries(
     ministream_client
     PRIVATE MiniStream::Core Qt6::Quick Qt6::Qml Qt6::QuickControls2 SDL3::SDL3
+      "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo"
+      "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation"
   )
   ministream_add_qml_ui(ministream_client)
 else()

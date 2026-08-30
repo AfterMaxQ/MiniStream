@@ -15,6 +15,7 @@ struct CodecConfig {
   std::uint32_t fps{};
   bool hdr10{};
   std::vector<std::byte> parameter_sets;
+  bool operator==(const CodecConfig&) const = default;
 };
 
 }  // namespace ministream

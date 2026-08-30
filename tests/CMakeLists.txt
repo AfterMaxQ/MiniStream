@@ -26,12 +26,14 @@ add_executable(
   audio/jitter_buffer_test.cpp
   audio/drift_controller_test.cpp
   input/gamepad_packet_test.cpp
+  input/desktop_input_test.cpp
   input/input_coalescer_test.cpp
   input/input_capture_test.cpp
   input/rumble_packet_test.cpp
   session/session_runtime_test.cpp
   telemetry/stream_aggregator_test.cpp
   config/stream_profile_test.cpp
+  video/codec_config_wire_test.cpp
   session/discovery_test.cpp
   security/pairing_wire_test.cpp
 )

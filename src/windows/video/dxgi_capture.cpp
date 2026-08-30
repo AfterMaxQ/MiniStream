@@ -80,4 +80,12 @@ Result<CapturedFrame, CaptureError> DxgiCapture::acquire(Microseconds timeout) {
        description.Format, description.Width, description.Height});
 }
 
+ID3D11Device* DxgiCapture::device() const noexcept {
+  return impl_ ? impl_->device.Get() : nullptr;
+}
+
+ID3D11DeviceContext* DxgiCapture::context() const noexcept {
+  return impl_ ? impl_->context.Get() : nullptr;
+}
+
 }  // namespace ministream

@@ -1,7 +1,11 @@
 #include "macos/ui/client_controller.hpp"
 
 #include "core/config/stream_profile.hpp"
+#include "core/protocol/wire.hpp"
 #include "core/session/handshake.hpp"
+#include "core/video/codec_config_wire.hpp"
+#include "macos/audio/coreaudio_output.hpp"
+#include "macos/video/videotoolbox_decoder.hpp"
 
 #include <chrono>
 #include <random>
@@ -23,6 +27,67 @@ ClientController::ClientController(QObject* parent) : QObject(parent) {
 }
 
 ClientController::~ClientController() { disconnectSession(); }
+
+void ClientController::createMediaReceiver() {
+  if (!session_keys_ || media_receiver_) {
+    return;
+  }
+  crypto_ = std::make_unique<SessionCrypto>(
+      session_id_, session_keys_->tx, session_keys_->rx, 0x4D535443U, 0x4D535448U);
+  media_receiver_ = std::make_unique<MediaReceiver>(session_id_, *crypto_);
+  video_decoder_ = std::make_unique<VideoToolboxDecoder>();
+  audio_decoder_ = std::make_unique<OpusDecoder48kStereo>();
+  audio_output_ = std::make_unique<CoreAudioOutput>();
+  if (audio_output_) {
+    audio_output_->start();
+  }
+}
+
+void ClientController::pollMedia(const ReceivedDatagram& incoming) {
+  if (!media_receiver_) {
+    return;
+  }
+  const auto common = incoming.datagram.bytes.size() >= kCommonHeaderBytes
+                          ? decode_common_header(std::span<const std::byte>{incoming.datagram.bytes}
+                                                     .first<kCommonHeaderBytes>())
+                          : std::nullopt;
+  if (!common) {
+    return;
+  }
+  if (common->type == PacketType::Control) {
+    if (const auto payload = crypto_->open(incoming.datagram)) {
+      if (const auto config = decode_codec_config(*payload); config && video_decoder_) {
+        video_decoder_->initialize(*config);
+      }
+    }
+  } else if (common->type == PacketType::Video) {
+    if (const auto frame = media_receiver_->receive_video(incoming.datagram, SteadyClock::now());
+        frame && video_decoder_) {
+      video_decoder_->decode(frame->bytes, frame->capture_timestamp_us);
+    }
+  } else if (common->type == PacketType::Audio) {
+    if (const auto packet = media_receiver_->receive_audio(incoming.datagram); packet) {
+      audio_jitter_.push(*packet);
+      for (;;) {
+        const auto playout = audio_jitter_.pop(expected_audio_sequence_);
+        if (playout.kind == AudioPlayoutKind::Plc) {
+          if (audio_decoder_ && audio_output_) {
+            if (const auto samples = audio_decoder_->decode_loss(); samples) {
+              audio_output_->push(*samples);
+            }
+          }
+          break;
+        }
+        ++expected_audio_sequence_;
+        if (audio_decoder_ && audio_output_ && playout.packet) {
+          if (const auto samples = audio_decoder_->decode(playout.packet->opus); samples) {
+            audio_output_->push(*samples);
+          }
+        }
+      }
+    }
+  }
+}
 
 QStringList ClientController::hosts() const { return host_labels_; }
 bool ClientController::searching() const noexcept { return searching_; }
@@ -173,6 +238,16 @@ void ClientController::pollConfirmation() {
   if (!incoming) {
     return;
   }
+  const auto common = incoming->datagram.bytes.size() >= kCommonHeaderBytes
+                          ? decode_common_header(std::span<const std::byte>{incoming->datagram.bytes}
+                                                     .first<kCommonHeaderBytes>())
+                          : std::nullopt;
+  if (common && (common->type == PacketType::Control || common->type == PacketType::Video ||
+                 common->type == PacketType::Audio) &&
+      media_receiver_) {
+    pollMedia(*incoming);
+    return;
+  }
   const auto accepted = decode_pairing_confirmation(incoming->datagram.bytes);
   if (!accepted || !*accepted) {
     disconnectSession();
@@ -183,6 +258,7 @@ void ClientController::pollConfirmation() {
     const auto keys = derive_session_keys(*ephemeral_, peer_offer_->ephemeral, true);
     if (keys) {
       session_keys_ = *keys;
+      createMediaReceiver();
     }
     resetPairing();
   }

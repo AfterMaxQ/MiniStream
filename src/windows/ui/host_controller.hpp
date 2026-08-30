@@ -1,6 +1,9 @@
 #pragma once
 
 #include "core/net/udp_endpoint.hpp"
+#include "core/audio/opus_codec.hpp"
+#include "core/media/media_pipeline.hpp"
+#include "core/video/codec_config.hpp"
 #include "core/security/identity.hpp"
 #include "core/security/pairing.hpp"
 #include "core/security/pairing_wire.hpp"
@@ -13,12 +16,15 @@
 
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace ministream {
 
 class DxgiCapture;
 class WasapiLoopback;
 class VirtualGamepad;
+class NvencEncoder;
+class RemoteInputSink;
 
 class HostController : public QObject {
   Q_OBJECT
@@ -66,6 +72,7 @@ class HostController : public QObject {
  private:
   void pollNetwork();
   void resetPairing();
+  void createMediaCrypto();
 
   HostCapabilities capabilities_;
   bool hosting_{};
@@ -77,6 +84,22 @@ class HostController : public QObject {
   std::unique_ptr<VirtualGamepad> gamepad_;
   std::unique_ptr<DiscoveryHost> discovery_;
   std::unique_ptr<UdpEndpoint> session_;
+  std::unique_ptr<NvencEncoder> encoder_;
+  std::unique_ptr<OpusEncoder48kStereo> opus_encoder_;
+  std::unique_ptr<PacketScheduler> scheduler_;
+  std::unique_ptr<SessionCrypto> crypto_;
+  std::unique_ptr<MediaSender> media_sender_;
+  std::unique_ptr<RemoteInputSink> input_sink_;
+  std::vector<float> audio_pending_;
+  VideoCodec negotiated_codec_{VideoCodec::H264};
+  std::uint32_t negotiated_width_{1920};
+  std::uint32_t negotiated_height_{1080};
+  std::uint32_t negotiated_fps_{60};
+  std::uint32_t negotiated_bitrate_{20'000'000};
+  SessionId session_id_{1};
+  std::uint32_t audio_sequence_{};
+  bool encoder_attempted_{};
+  bool codec_config_sent_{};
   std::optional<DeviceIdentity> identity_;
   std::optional<EphemeralKeyPair> ephemeral_;
   std::optional<PairingOffer> peer_offer_;

@@ -7,6 +7,7 @@ add_library(
   transport/reassembler.cpp
   transport/reliable_control.cpp
   transport/packet_scheduler.cpp
+  media/media_pipeline.cpp
   time/clock_sync.cpp
   net/fault_injector.cpp
   adaptation/rate_controller.cpp
@@ -20,12 +21,14 @@ add_library(
   audio/jitter_buffer.cpp
   audio/drift_controller.cpp
   input/gamepad_packet.cpp
+  input/desktop_input.cpp
   input/input_coalescer.cpp
   input/input_capture.cpp
   input/rumble_packet.cpp
   session/session_runtime.cpp
   telemetry/stream_aggregator.cpp
   config/stream_profile.cpp
+  video/codec_config_wire.cpp
   session/discovery.cpp
   security/pairing_wire.cpp
 )

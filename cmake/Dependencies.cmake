@@ -9,6 +9,9 @@ set(MINISTREAM_SODIUM_VERSION 1.0.20)
 set(MINISTREAM_LEOPARD_COMMIT 6e5725ebdf9da4370b0bcc4f70fa8eb66f4e6198)
 set(MINISTREAM_VIGEMCLIENT_COMMIT 9e91a124d179bf26a878a952153042ac871da243)
 
+set(MINISTREAM_NVENC_SDK_ROOT "" CACHE PATH
+    "NVIDIA Video Codec SDK root (contains Interface/nvEncodeAPI.h)")
+
 if(MINISTREAM_BUILD_TESTS)
   FetchContent_Declare(
     Catch2
@@ -29,6 +32,13 @@ add_library(ministream_asio INTERFACE)
 target_include_directories(ministream_asio SYSTEM INTERFACE "${asio_SOURCE_DIR}/include")
 target_compile_definitions(ministream_asio INTERFACE ASIO_STANDALONE ASIO_NO_DEPRECATED)
 if(WIN32)
+  if(MINISTREAM_NVENC_SDK_ROOT AND
+     EXISTS "${MINISTREAM_NVENC_SDK_ROOT}/Interface/nvEncodeAPI.h")
+    set(MINISTREAM_HAVE_NVENC_SDK ON)
+  else()
+    set(MINISTREAM_HAVE_NVENC_SDK OFF)
+    message(STATUS "NVENC SDK headers not configured; runtime capability will be unavailable")
+  endif()
   target_compile_definitions(ministream_asio INTERFACE _WIN32_WINNT=0x0A00)
   target_link_libraries(ministream_asio INTERFACE ws2_32 mswsock)
 endif()
