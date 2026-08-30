@@ -57,7 +57,7 @@ bool WindowsControlledBackend::start() {
   } else if (impl_->rumble_sender) {
     impl_->gamepad->set_rumble_callback([this](const RumbleState& state) {
       if (impl_->rumble_sender) {
-        impl_->rumble_sender({state.low, state.high, 0});
+        impl_->rumble_sender({state.low, state.high, 100});
       }
     });
   }
@@ -174,7 +174,7 @@ void WindowsControlledBackend::set_rumble_sender(
   if (impl_->gamepad && impl_->rumble_sender) {
     impl_->gamepad->set_rumble_callback([this](const RumbleState& state) {
       if (impl_->rumble_sender) {
-        impl_->rumble_sender({state.low, state.high, 0});
+        impl_->rumble_sender({state.low, state.high, 100});
       }
     });
   }

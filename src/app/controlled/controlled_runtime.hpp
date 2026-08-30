@@ -15,7 +15,9 @@
 #include "platform/controlled_backend.hpp"
 
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -52,6 +54,7 @@ class ControlledRuntime {
   void send_pending_audio(SteadyClock::time_point now);
   void send_pending_video(SteadyClock::time_point now);
   void send_rumble(const RumblePacket& packet);
+  void send_pending_rumble();
 
   std::unique_ptr<ControlledBackend> backend_;
   DiscoveryAdvertisement advertisement_;
@@ -63,6 +66,8 @@ class ControlledRuntime {
   std::unique_ptr<MediaSender> media_sender_;
   std::unique_ptr<OpusEncoder48kStereo> audio_encoder_;
   std::vector<float> audio_pending_;
+  std::mutex rumble_mutex_;
+  std::deque<RumblePacket> rumble_pending_;
   std::uint32_t audio_sequence_{};
   GamepadSequenceFilter gamepad_sequence_filter_;
   std::optional<DeviceIdentity> identity_;

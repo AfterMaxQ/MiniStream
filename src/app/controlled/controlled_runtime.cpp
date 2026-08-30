@@ -71,6 +71,10 @@ void ControlledRuntime::stop() noexcept {
   crypto_.reset();
   audio_encoder_.reset();
   audio_pending_.clear();
+  {
+    std::scoped_lock lock(rumble_mutex_);
+    rumble_pending_.clear();
+  }
   audio_sequence_ = 0;
   gamepad_sequence_filter_ = GamepadSequenceFilter{};
   discovery_.reset();
@@ -269,12 +273,30 @@ void ControlledRuntime::send_pending_audio(SteadyClock::time_point now) {
 }
 
 void ControlledRuntime::send_rumble(const RumblePacket& packet) {
+  std::scoped_lock lock(rumble_mutex_);
+  if (rumble_pending_.size() < 16U) {
+    rumble_pending_.push_back(packet);
+  }
+}
+
+void ControlledRuntime::send_pending_rumble() {
   if (!session_ || !crypto_ || !streaming()) {
     return;
   }
-  const auto payload = encode_rumble_packet(packet);
-  if (const auto sealed = crypto_->seal(PacketType::Feedback, payload)) {
-    session_->reply(sealed->bytes);
+  for (;;) {
+    RumblePacket packet;
+    {
+      std::scoped_lock lock(rumble_mutex_);
+      if (rumble_pending_.empty()) {
+        break;
+      }
+      packet = rumble_pending_.front();
+      rumble_pending_.pop_front();
+    }
+    const auto payload = encode_rumble_packet(packet);
+    if (const auto sealed = crypto_->seal(PacketType::Feedback, payload)) {
+      session_->reply(sealed->bytes);
+    }
   }
 }
 
@@ -290,6 +312,7 @@ void ControlledRuntime::tick() {
     return;
   }
   const auto now = SteadyClock::now();
+  send_pending_rumble();
   send_pending_video(now);
   send_pending_audio(now);
   if (!scheduler_) {
