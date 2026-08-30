@@ -38,6 +38,7 @@ add_executable(
   video/codec_config_wire_test.cpp
   session/discovery_test.cpp
   session/controlled_runtime_test.cpp
+  session/remote_runtime_test.cpp
   security/pairing_wire_test.cpp
 )
 target_link_libraries(ministream_tests PRIVATE ministream_app MiniStream::Core Catch2::Catch2WithMain)

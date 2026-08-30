@@ -2,6 +2,7 @@ add_library(
   ministream_app
   STATIC
   controlled/controlled_runtime.cpp
+  remote/remote_runtime.cpp
 )
 
 target_include_directories(ministream_app PUBLIC "${PROJECT_SOURCE_DIR}/src")
