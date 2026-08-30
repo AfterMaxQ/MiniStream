@@ -7,7 +7,7 @@ Item {
     property string peerLabel: ""
 
     Column {
-        width: 420
+        width: Math.min(parent.width - Tokens.space32 * 2, 420)
         anchors.centerIn: parent
         spacing: Tokens.space24
 
