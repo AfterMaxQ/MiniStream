@@ -66,5 +66,15 @@ if(WIN32)
   )
 endif()
 
+if(APPLE)
+  target_sources(
+    ministream_tests
+    PRIVATE
+      macos/controlled_backend_test.mm
+      macos/remote_backend_test.mm
+  )
+  target_link_libraries(ministream_tests PRIVATE ministream_macos_platform)
+endif()
+
 include(Catch)
 catch_discover_tests(ministream_tests)
