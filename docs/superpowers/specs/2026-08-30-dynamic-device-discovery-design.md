@@ -21,7 +21,8 @@ The shared discovery advertisement will carry bounded, versioned metadata:
 - session port;
 - advertised codec capabilities;
 - maximum width, height, and frame rate;
-- HDR, audio, and controller capability flags;
+- HDR and audio capability flags;
+- input capability flags for connection checks (not shown in the device row);
 - a `controllable` role flag.
 
 Only a device with `controllable` enabled answers discovery queries. The
@@ -49,8 +50,12 @@ from advertisement data:
 
 ```text
 <system type> · <device name>
-<codec> · <width>×<height> <fps> fps · <HDR> · <audio> · <controller>
+<codec> · <width>×<height> <fps> fps · <HDR> · <audio>
 ```
+
+Input capabilities are not rendered as a required parameter. A session may use
+keyboard and mouse without a gamepad, so the discovery card does not display a
+gamepad field or imply that a controller is present.
 
 Long names and parameter strings stay within the card by using a bounded
 layout, wrapping the parameter line, and eliding the identity line at the
