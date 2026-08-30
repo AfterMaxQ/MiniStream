@@ -62,7 +62,8 @@ Result<void, NvencError> NvencEncoder::initialize(
   }
   impl_->api = {};
   impl_->api.version = NV_ENCODE_API_FUNCTION_LIST_VER;
-  if (create(&impl_->api) != NV_ENC_SUCCESS || !impl_->api.nvEncOpenEncodeSessionEx) {
+  const auto create_status = create(&impl_->api);
+  if (create_status != NV_ENC_SUCCESS || !impl_->api.nvEncOpenEncodeSessionEx) {
     stop();
     return Result<void, NvencError>::err(NvencError::Initialize);
   }
@@ -72,17 +73,43 @@ Result<void, NvencError> NvencEncoder::initialize(
   open.deviceType = NV_ENC_DEVICE_TYPE_DIRECTX;
   open.device = device;
   open.apiVersion = NVENCAPI_VERSION;
-  if (impl_->api.nvEncOpenEncodeSessionEx(&open, &impl_->session) != NV_ENC_SUCCESS) {
+  const auto open_status = impl_->api.nvEncOpenEncodeSessionEx(&open, &impl_->session);
+  if (open_status != NV_ENC_SUCCESS) {
     stop();
     return Result<void, NvencError>::err(NvencError::Initialize);
   }
 
   NV_ENC_CONFIG encode_config{};
+  const auto encode_guid = config.codec == VideoCodec::H264 ? NV_ENC_CODEC_H264_GUID
+                                                              : NV_ENC_CODEC_HEVC_GUID;
+#if NVENCAPI_MAJOR_VERSION >= 13
+  const auto preset_guid = NV_ENC_PRESET_P4_GUID;
+#else
+  const auto preset_guid = NV_ENC_PRESET_DEFAULT_GUID;
+#endif
+  // Start from the driver's preset so fields added by newer API revisions
+  // receive valid defaults.  A zero-filled config is rejected by some
+  // driver versions even when the fields we explicitly set are valid.
+  if (impl_->api.nvEncGetEncodePresetConfig) {
+    NV_ENC_PRESET_CONFIG preset{};
+    preset.version = NV_ENC_PRESET_CONFIG_VER;
+    preset.presetCfg.version = NV_ENC_CONFIG_VER;
+    const auto preset_status = impl_->api.nvEncGetEncodePresetConfig(
+        impl_->session, encode_guid, preset_guid, &preset);
+    if (preset_status == NV_ENC_SUCCESS) {
+      encode_config = preset.presetCfg;
+    }
+  }
   encode_config.version = NV_ENC_CONFIG_VER;
   encode_config.gopLength = NVENC_INFINITE_GOPLENGTH;
   encode_config.frameIntervalP = 1;  // no B frames or reorder delay
+  encode_config.frameFieldMode = NV_ENC_PARAMS_FRAME_FIELD_MODE_FRAME;
   encode_config.rcParams.version = NV_ENC_RC_PARAMS_VER;
+#if NVENCAPI_MAJOR_VERSION >= 13
+  encode_config.rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR;
+#else
   encode_config.rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR_LOWDELAY_HQ;
+#endif
   encode_config.rcParams.averageBitRate = config.bitrate_bps;
   encode_config.rcParams.maxBitRate = config.bitrate_bps;
   encode_config.rcParams.zeroReorderDelay = 1;
@@ -93,18 +120,25 @@ Result<void, NvencError> NvencEncoder::initialize(
     encode_config.encodeCodecConfig.h264Config.idrPeriod = NVENC_INFINITE_GOPLENGTH;
     encode_config.encodeCodecConfig.h264Config.chromaFormatIDC = 1;
   } else {
-    encode_config.profileGUID = NV_ENC_HEVC_PROFILE_MAIN_GUID;
+    encode_config.profileGUID = config.hdr10 ? NV_ENC_HEVC_PROFILE_MAIN10_GUID
+                                             : NV_ENC_HEVC_PROFILE_MAIN_GUID;
     encode_config.encodeCodecConfig.hevcConfig.repeatSPSPPS = 1;
     encode_config.encodeCodecConfig.hevcConfig.idrPeriod = NVENC_INFINITE_GOPLENGTH;
     encode_config.encodeCodecConfig.hevcConfig.chromaFormatIDC = 1;
+#if NVENCAPI_MAJOR_VERSION >= 13
+    encode_config.encodeCodecConfig.hevcConfig.outputBitDepth =
+        config.hdr10 ? NV_ENC_BIT_DEPTH_10 : NV_ENC_BIT_DEPTH_8;
+    encode_config.encodeCodecConfig.hevcConfig.inputBitDepth = NV_ENC_BIT_DEPTH_8;
+#else
     encode_config.encodeCodecConfig.hevcConfig.pixelBitDepthMinus8 = config.hdr10 ? 2 : 0;
+#endif
   }
 
   NV_ENC_INITIALIZE_PARAMS init{};
   init.version = NV_ENC_INITIALIZE_PARAMS_VER;
   init.encodeGUID = config.codec == VideoCodec::H264 ? NV_ENC_CODEC_H264_GUID
                                                        : NV_ENC_CODEC_HEVC_GUID;
-  init.presetGUID = NV_ENC_PRESET_DEFAULT_GUID;
+  init.presetGUID = preset_guid;
   init.encodeWidth = config.width;
   init.encodeHeight = config.height;
   init.darWidth = config.width;
@@ -116,7 +150,11 @@ Result<void, NvencError> NvencEncoder::initialize(
   init.maxEncodeWidth = config.width;
   init.maxEncodeHeight = config.height;
   init.encodeConfig = &encode_config;
-  if (impl_->api.nvEncInitializeEncoder(impl_->session, &init) != NV_ENC_SUCCESS) {
+#if NVENCAPI_MAJOR_VERSION >= 13
+  init.tuningInfo = NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY;
+#endif
+  const auto init_status = impl_->api.nvEncInitializeEncoder(impl_->session, &init);
+  if (init_status != NV_ENC_SUCCESS) {
     stop();
     return Result<void, NvencError>::err(NvencError::Initialize);
   }
@@ -233,7 +271,11 @@ Result<void, NvencError> NvencEncoder::reconfigure_bitrate(std::uint32_t bitrate
   config.gopLength = NVENC_INFINITE_GOPLENGTH;
   config.frameIntervalP = 1;
   config.rcParams.version = NV_ENC_RC_PARAMS_VER;
+#if NVENCAPI_MAJOR_VERSION >= 13
+  config.rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR;
+#else
   config.rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR_LOWDELAY_HQ;
+#endif
   config.rcParams.averageBitRate = bitrate_bps;
   config.rcParams.maxBitRate = bitrate_bps;
   NV_ENC_RECONFIGURE_PARAMS params{};

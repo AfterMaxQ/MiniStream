@@ -51,8 +51,8 @@ add_custom_command(
           $<TARGET_FILE_DIR:ministream_host>
 )
 
-install(TARGETS ministream_host RUNTIME DESTINATION . COMPONENT Runtime)
-install(FILES "$<TARGET_FILE:ministream_sodium>" DESTINATION . COMPONENT Runtime)
+install(TARGETS ministream_host RUNTIME DESTINATION bin COMPONENT Runtime)
+install(FILES "$<TARGET_FILE:ministream_sodium>" DESTINATION bin COMPONENT Runtime)
 if(MINISTREAM_BUILD_UI)
   ministream_install_qt_runtime(ministream_host)
 endif()

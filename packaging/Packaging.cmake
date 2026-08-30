@@ -15,10 +15,10 @@ if(WIN32)
   set(CPACK_NSIS_DISPLAY_NAME "MiniStream")
   set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
   set(CPACK_NSIS_MODIFY_PATH OFF)
-  set(CPACK_NSIS_MUI_FINISHPAGE_RUN "ministream_host.exe")
-  set(CPACK_NSIS_INSTALLED_ICON_NAME "ministream_host.exe")
+  set(CPACK_NSIS_MUI_FINISHPAGE_RUN "bin\\ministream_host.exe")
+  set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\ministream_host.exe")
   set(CPACK_NSIS_CREATE_ICONS_EXTRA
-      "CreateShortCut '$DESKTOP\\MiniStream.lnk' '$INSTDIR\\ministream_host.exe'")
+      "CreateShortCut '$DESKTOP\\MiniStream.lnk' '$INSTDIR\\bin\\ministream_host.exe'")
   set(CPACK_NSIS_DELETE_ICONS_EXTRA "Delete '$DESKTOP\\MiniStream.lnk'")
 
   set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT Runtime)
