@@ -24,6 +24,8 @@ std::uint64_t random_nonce() {
 ClientController::ClientController(QObject* parent) : QObject(parent) {
   poll_timer_.setInterval(20);
   connect(&poll_timer_, &QTimer::timeout, this, &ClientController::pollConfirmation);
+  input_router_ = std::make_unique<RemoteInputRouter>(
+      input_capture_, [this](const DesktopInput& input) { sendDesktopInput(input); });
 }
 
 ClientController::~ClientController() { disconnectSession(); }
@@ -40,6 +42,19 @@ void ClientController::createMediaReceiver() {
   audio_output_ = std::make_unique<CoreAudioOutput>();
   if (audio_output_) {
     audio_output_->start();
+  }
+}
+
+void ClientController::sendDesktopInput(const DesktopInput& input) {
+  if (!session_ || !crypto_) {
+    return;
+  }
+  const auto payload = encode_desktop_input(input);
+  if (payload.empty()) {
+    return;
+  }
+  if (const auto packet = crypto_->seal(PacketType::Input, payload); packet) {
+    session_->send(packet->bytes);
   }
 }
 
@@ -188,28 +203,23 @@ void ClientController::toggleRemoteInput() {
     releaseRemoteInput();
     return;
   }
-  if (!connected_ || !input_capture_.enter_remote()) {
+  if (!connected_ || !input_router_) {
     return;
   }
-  auto keyboard = input_capture_.capture(InputDevice::Keyboard);
-  auto mouse = input_capture_.capture(InputDevice::Mouse);
-  auto gamepad = input_capture_.capture(InputDevice::Gamepad);
-  if (!keyboard || !mouse || !gamepad) {
+  if (!input_router_->begin()) {
     input_capture_.leave_remote();
     return;
   }
-  keyboard_lease_ = std::move(*keyboard);
-  mouse_lease_ = std::move(*mouse);
-  gamepad_lease_ = std::move(*gamepad);
   emit remoteInputChanged();
 }
 
 void ClientController::releaseRemoteInput() {
   const bool was_active = input_capture_.remote();
-  keyboard_lease_.reset();
-  mouse_lease_.reset();
-  gamepad_lease_.reset();
-  input_capture_.leave_remote();
+  if (input_router_) {
+    input_router_->end();
+  } else {
+    input_capture_.leave_remote();
+  }
   if (was_active) {
     emit remoteInputChanged();
   }
@@ -267,6 +277,12 @@ void ClientController::pollConfirmation() {
 void ClientController::disconnectSession() {
   releaseRemoteInput();
   poll_timer_.stop();
+  media_receiver_.reset();
+  crypto_.reset();
+  audio_output_.reset();
+  audio_decoder_.reset();
+  video_decoder_.reset();
+  expected_audio_sequence_ = 0;
   session_.reset();
   const bool was_connected = connected_;
   connected_ = false;

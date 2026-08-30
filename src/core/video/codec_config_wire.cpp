@@ -1,6 +1,7 @@
 #include "core/video/codec_config_wire.hpp"
 
 #include "core/protocol/value_types.hpp"
+#include "core/transport/packetizer.hpp"
 
 namespace ministream {
 namespace {
@@ -20,7 +21,7 @@ std::uint32_t get(std::span<const std::byte> in, std::size_t offset) {
 
 std::vector<std::byte> encode_codec_config(const CodecConfig& config) {
   if (config.width == 0 || config.height == 0 || config.fps == 0 ||
-      config.parameter_sets.size() > kMaxDatagramBytes - 17U) {
+      config.parameter_sets.size() > kMaxSealedPayloadBytes - 17U) {
     return {};
   }
   std::vector<std::byte> bytes;

@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 
 namespace ministream {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/input/input_capture.hpp"
+#include "core/input/remote_input_router.hpp"
 #include "core/audio/audio_packet.hpp"
 #include "core/audio/jitter_buffer.hpp"
 #include "core/audio/opus_codec.hpp"
@@ -66,6 +67,7 @@ class ClientController : public QObject {
   void resetPairing();
   void createMediaReceiver();
   void pollMedia(const ReceivedDatagram& incoming);
+  void sendDesktopInput(const DesktopInput& input);
 
   QStringList host_labels_;
   std::vector<DiscoveredHost> discovered_;
@@ -88,9 +90,7 @@ class ClientController : public QObject {
   AudioJitterBuffer audio_jitter_;
   std::uint32_t expected_audio_sequence_{};
   InputCapture input_capture_;
-  std::optional<InputCapture::Lease> keyboard_lease_;
-  std::optional<InputCapture::Lease> mouse_lease_;
-  std::optional<InputCapture::Lease> gamepad_lease_;
+  std::unique_ptr<RemoteInputRouter> input_router_;
   PairingConfirmation confirmation_;
   SessionId session_id_{1};
 };

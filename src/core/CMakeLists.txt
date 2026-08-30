@@ -22,6 +22,7 @@ add_library(
   audio/drift_controller.cpp
   input/gamepad_packet.cpp
   input/desktop_input.cpp
+  input/remote_input_router.cpp
   input/input_coalescer.cpp
   input/input_capture.cpp
   input/rumble_packet.cpp

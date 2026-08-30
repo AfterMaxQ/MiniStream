@@ -11,6 +11,16 @@
 #include <vector>
 
 namespace ministream {
+
+struct VideoToolboxDecoder::Impl {
+  CodecConfig config;
+  CMVideoFormatDescriptionRef format{};
+  VTDecompressionSessionRef session{};
+  CVPixelBufferRef latest{};
+  std::uint64_t latest_timestamp_us{};
+  std::mutex mutex;
+};
+
 namespace {
 
 struct NalUnit {
@@ -75,15 +85,6 @@ void output_callback(void* refcon, void*, OSStatus status, VTDecodeInfoFlags,
 }
 
 }  // namespace
-
-struct VideoToolboxDecoder::Impl {
-  CodecConfig config;
-  CMVideoFormatDescriptionRef format{};
-  VTDecompressionSessionRef session{};
-  CVPixelBufferRef latest{};
-  std::uint64_t latest_timestamp_us{};
-  std::mutex mutex;
-};
 
 VideoToolboxDecoder::VideoToolboxDecoder() : impl_(std::make_unique<Impl>()) {}
 VideoToolboxDecoder::~VideoToolboxDecoder() { stop(); }

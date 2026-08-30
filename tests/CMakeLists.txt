@@ -27,6 +27,7 @@ add_executable(
   audio/drift_controller_test.cpp
   input/gamepad_packet_test.cpp
   input/desktop_input_test.cpp
+  input/remote_input_router_test.cpp
   input/input_coalescer_test.cpp
   input/input_capture_test.cpp
   input/rumble_packet_test.cpp
