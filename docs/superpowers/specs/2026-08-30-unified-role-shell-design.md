@@ -1,6 +1,6 @@
 # MiniStream Unified Role Shell
 
-**Status:** Draft for review  
+**Status:** Approved
 **Date:** 2026-08-30
 
 ## Goal
@@ -191,9 +191,8 @@ lease.
 While remote input is active, Esc and F11 are forwarded to the remote
 application. The local mode shortcuts are intentionally uncommon:
 
-- Windows/Linux: `Ctrl+Alt+R` toggles remote input, `Ctrl+Alt+F` toggles
-  fullscreen.
-- macOS: `⌘+Option+R` toggles remote input, `⌘+Option+F` toggles fullscreen.
+- Windows/Linux: `Ctrl+Alt+R` toggles remote input.
+- macOS: `⌘+Option+R` toggles remote input.
 
 In local mode, Esc exits fullscreen. No global keyboard or mouse hook is
 installed.
@@ -229,7 +228,7 @@ rejected rather than silently assigned a platform role.
 - Shared unit tests cover role state transitions, cleanup, handshake roles,
   discovery filtering, packet size limits, and latest-frame ownership.
 - Windows tests cover DXGI/NVENC encode, Media Foundation decode, WASAPI
-  capture/output, optional ViGEm, and one Host/Remote loopback.
+  capture/output, optional ViGEm, and one Controlled/Remote loopback.
 - macOS tests cover ScreenCaptureKit/VideoToolbox encode/decode, Metal surface,
   CoreAudio capture/output, permissions, and one local loopback where hardware
   is available.

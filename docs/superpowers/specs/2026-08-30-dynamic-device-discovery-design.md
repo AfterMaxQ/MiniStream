@@ -77,9 +77,8 @@ destructor paths continue to release every input lease. No global input hook
 is added.
 
 While remote input is active, Esc and F11 are passed to the remote application.
-The controller uses `Ctrl+Alt+R` / `⌘+Option+R` to switch input mode and
-`Ctrl+Alt+F` / `⌘+Option+F` to toggle fullscreen. In local mode, Esc may leave
-fullscreen.
+The controller uses `Ctrl+Alt+R` / `⌘+Option+R` to switch input mode. In local
+mode, F11 toggles fullscreen and Esc may leave fullscreen.
 
 ## Implementation boundary
 

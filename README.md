@@ -1,112 +1,108 @@
 # MiniStream
 
-MiniStream is a LAN game-streaming application. The Windows program is the host and the macOS program is the client. Shared C++20 code handles the wire protocol, UDP transport, FEC, congestion response, pairing, session encryption, Opus audio, controller packets, and telemetry. Platform code handles capture, audio devices, virtual input, and the desktop shell.
+MiniStream 是局域网游戏串流程序。Windows 和 macOS 使用同一个应用入口，
+启动后按当前会话选择“Allow control”或“Remote control”。
 
-## Architecture
-
-```text
-Windows Host
-  DXGI Desktop Duplication -> D3D11 texture -> NVENC -> authenticated UDP
-  WASAPI loopback         -> Opus audio packets
-  ViGEmBus                <- controller packets
-  discovery / pairing / encrypted UDP session
-                              |
-                           LAN / Wi-Fi
-                              |
-macOS Client
-  discovery / pairing / encrypted UDP session
-  SDL3 controller         -> input packets
-  video packets            -> VideoToolbox pixel buffers
-  audio packets            -> CoreAudio output
-
-Shared core
-  versioned packets, bounded queues, reassembly, Leopard FEC,
-  priority scheduling, adaptive bitrate policy, clock sync,
-  session lifecycle, rolling telemetry, and libsodium security
-```
-
-The current `0.1.0` checkout contains the shared authenticated media transport, Windows DXGI/WASAPI backends, runtime NVENC integration, ViGEmClient integration, macOS VideoToolbox/CoreAudio backends, LAN discovery, six-digit pairing, and the Qt Quick host/client shell. The Qt shell is deliberately separate from media and network hot paths.
-
-A successful build proves the protocol, capture, codec, audio, controller, pairing, and packaging contracts. The release checklist still requires target-machine validation of the complete 4K60 HDR session.
-
-## Repository layout
+## 架构
 
 ```text
-src/core/       shared protocol, transport, security, audio, input, session, telemetry
-src/windows/    Windows host capabilities, DXGI capture, WASAPI loopback, ViGEmBus input
-src/macos/      macOS client entry points and SDL3 controller backend
-ui/             Qt Quick pages, controls, and theme tokens
-cmake/          pinned dependencies, warnings, Qt deployment helpers
-packaging/      CPack/NSIS and macOS DragNDrop configuration
-tests/          Catch2 unit and loopback tests
-tools/          netprobe and UI copy checker
-docs/           design, implementation plans, and release criteria
+MiniStream (Qt Quick / QML)
+          │
+          ▼
+RoleController ── 顶部角色切换、发现、配对、输入和清理
+     ┌───────────────┴───────────────┐
+     ▼                               ▼
+ControlledRuntime                 RemoteRuntime
+     │                               │
+     ├─ Windows: DXGI/D3D11/NVENC   ├─ Windows: MF/D3D11
+     │  WASAPI loopback/ViGEm        │  WASAPI output
+     │                               │
+     └─ macOS: display capture      └─ macOS: VideoToolbox/Metal
+        VideoToolbox/CoreAudio/        CoreAudio/SDL3
+        Accessibility input
+                    │
+                    ▼
+MiniStream Core: versioned UDP, pairing, authenticated encryption,
+FEC, bounded packet scheduling, Opus audio, input and telemetry
 ```
 
-## Runtime flow
+视频、音频和输入都通过同一条加密 UDP 会话传输。控制端只接收主动广播的
+设备；被控制端未点击 **Allow control** 前不会出现在发现列表中。视频帧在
+Windows 保持 D3D11 纹理，在 macOS 保持 `CVPixelBuffer`/Metal 纹理，QML
+控件与视频画面位于同一个窗口。
 
-1. Install the Windows host and the macOS client.
-2. On the device to be controlled, confirm Video, Audio, Input, and Network readiness, then choose **Allow control**.
-3. On the other device choose **Find devices**, select the advertised device, and choose **Connect**.
-4. Both devices show the same six-digit pairing code. Confirm only when the codes match on both screens.
-5. Choose **Control remote** when input should be sent to the selected device. Choose **Use this device** to return keyboard and mouse routing locally. In remote mode, Esc and F11 go to the game. Use `Ctrl+Alt+R` / `⌘+Option+R` to switch input mode and `Ctrl+Alt+F` / `⌘+Option+F` to toggle fullscreen.
+## 使用
 
-MiniStream is LAN-only in this version. It does not provide Internet/NAT traversal, accounts, cloud services, or multi-controller support.
+1. 在准备共享画面的设备上打开 **Allow control**，确认 Video、Audio、Input
+   和 Network 状态正常，然后点击 **Allow control**。
+2. 在另一台设备切换到 **Remote control**，点击 **Find devices**，从列表中
+   选择设备。列表显示系统类型、设备名和视频/音频参数。
+3. 点击 **Connect**。两台设备会显示同一个六位配对码；只有确认两边代码
+   一致后才会开始串流。
+4. 串流页面点击 **Control remote** 将键盘、鼠标和可用手柄发送到远端；
+   点击 **Use this device** 立即恢复本机输入。断开连接、切换顶部角色、
+   关闭窗口和配对取消也会释放输入。
 
-## Building from source
+输入捕获只在 MiniStream 窗口内生效，不安装全局键盘或鼠标钩子。为避免和
+游戏菜单快捷键冲突，远程输入开启时 Esc 和 F11 会发送到远端；退出控制请
+点击 **Use this device**。本机模式下：
 
-### Windows host
+- Windows/Linux：`Ctrl+Alt+R` 切换远程输入；
+- macOS：`⌘+Option+R` 切换远程输入；
+- `F11` 切换全屏，非远程输入模式下 `Esc` 退出全屏。
 
-Requirements for a development build:
+## 从源码构建
 
-- Windows 10 or newer with Visual Studio 2022 C++ tools
-- CMake 3.30 or newer
-- a recent NVIDIA driver for the NVENC capability check
-- ViGEmBus for virtual-controller operation
+### Windows
 
-Configure and build the native host and tests:
+开发构建需要 Visual Studio 2022 C++ 工具、CMake 3.30 或更高版本、Qt
+6.11.2 `msvc2022_64`、NVIDIA 驱动和 NVIDIA Video Codec SDK 头文件。
+将 Qt 安装目录设为 `QTDIR`，将包含 `Interface/nvEncodeAPI.h` 的 SDK 目录设
+为 `MINISTREAM_NVENC_SDK_ROOT`：
 
 ```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Debug
-ctest --test-dir build -C Debug --output-on-failure
-```
+$env:QTDIR = "<Qt 6.11.2>/msvc2022_64"
+$env:MINISTREAM_NVENC_SDK_ROOT = "<Video Codec SDK 13.1>"
 
-Build the Qt shell by pointing CMake at an installed Qt 6.11.2 tree:
-
-```powershell
 cmake -S . -B build-ui -G "Visual Studio 17 2022" -A x64 `
   -DMINISTREAM_BUILD_UI=ON `
-  -DCMAKE_PREFIX_PATH="C:\Qt\6.11.2\msvc2022_64" `
-  -DMINISTREAM_NVENC_SDK_ROOT="C:\SDKs\NVIDIA\Video_Codec_SDK_13.1"
-cmake --build build-ui --config Release
+  -DCMAKE_PREFIX_PATH="$env:QTDIR" `
+  -DMINISTREAM_NVENC_SDK_ROOT="$env:MINISTREAM_NVENC_SDK_ROOT"
+cmake --build build-ui --config Debug --parallel 4
+ctest --test-dir build-ui -C Debug --output-on-failure
 ```
 
-The client target is enabled when the same project is configured on macOS. SDL3 is fetched by CMake for the macOS input backend. Qt is a build-time dependency; it is copied into the application bundle by the deployment step described below.
+没有 ViGEmBus 时仍可使用键盘和鼠标。需要手柄时安装 ViGEmBus；发布安装
+器会携带官方安装程序并在驱动缺失时通过 Windows UAC 提示安装。
 
-The CMake options are:
+### macOS
 
-| Option | Default | Purpose |
-| --- | --- | --- |
-| `MINISTREAM_BUILD_TESTS` | `ON` | Build Catch2 tests |
-| `MINISTREAM_BUILD_TOOLS` | `ON` | Build `netprobe` |
-| `MINISTREAM_BUILD_UI` | `OFF` | Build the Qt Quick desktop shell |
-| `MINISTREAM_ENABLE_PACKAGING` | `OFF` | Enable CPack installer generation |
-| `MINISTREAM_NVENC_SDK_ROOT` | empty | NVIDIA Video Codec SDK headers used by the Windows NVENC integration |
+需要 Xcode、CMake 3.30 或更高版本、Qt 6.11.2 macOS 套件和 `libsodium`。
+例如先执行 `brew install libsodium`，然后在 Mac 上构建：
 
-Run the UI copy check before committing UI text:
-
-```powershell
-python tools/check_ui_copy.py ui
+```sh
+cmake -S . -B build-macos -G Xcode \
+  -DMINISTREAM_BUILD_UI=ON \
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.2/macos"
+cmake --build build-macos --config Release
+ctest --test-dir build-macos -C Release --output-on-failure
 ```
 
-## Release packages
+首次使用“Allow control”时，macOS 可能要求授予屏幕录制、麦克风和辅助功能
+权限。MiniStream 会在页面显示对应状态，可通过 **Open System Settings**
+打开系统设置。拒绝权限不会启用软件视频回退。
 
-Release packaging is target-specific. Build the Windows installer on Windows and the DMG on macOS; the repository does not require end users to install CMake, Qt, SDL, Opus, libsodium, Leopard, or Visual Studio.
+依赖库（Asio、SDL3、Opus、Leopard-RS 等）由 CMake 按
+`cmake/Dependencies.cmake` 中的版本获取；SDK、驱动和构建目录不属于仓库。
 
-### Windows installer
+## 发布包
 
-Configure a clean release tree with Qt available to CMake:
+发布包包含统一的 `ministream` 应用和 Qt/QML 运行时，最终用户不需要安装
+Qt、CMake、SDL、Opus、libsodium、Leopard-RS 或编译器。
+
+### Windows 安装器
+
+在已配置 Qt 和 NVIDIA SDK 的 Windows 环境中：
 
 ```powershell
 cmake -S . -B build-release -G "Visual Studio 17 2022" -A x64 `
@@ -114,18 +110,18 @@ cmake -S . -B build-release -G "Visual Studio 17 2022" -A x64 `
   -DMINISTREAM_BUILD_TOOLS=OFF `
   -DMINISTREAM_BUILD_UI=ON `
   -DMINISTREAM_ENABLE_PACKAGING=ON `
-  -DCMAKE_PREFIX_PATH="C:\Qt\6.11.2\msvc2022_64"
+  -DCMAKE_PREFIX_PATH="$env:QTDIR" `
+  -DMINISTREAM_NVENC_SDK_ROOT="$env:MINISTREAM_NVENC_SDK_ROOT"
 cmake --build build-release --config Release
 cpack --config build-release/CPackConfig.cmake -C Release
 ```
 
-The resulting `MiniStream-0.1.0-Windows-AMD64.exe` contains the host, libsodium, the MSVC runtime files, and the ViGEmBus installer. During installation it checks the `ViGEmBus` service. If the driver is absent, the installer asks whether to run the bundled driver installer; Windows then presents its normal UAC prompt. The MiniStream installer does not require the user to download a driver or DLL separately.
-
-The NVIDIA driver remains a machine prerequisite. The installer reports whether the NVIDIA adapter and `nvEncodeAPI64.dll` are available; it does not bundle a graphics driver.
+输出文件名为 `MiniStream-Setup.exe`。安装器包含 Qt/QML、MSVC runtime、
+libsodium 和 ViGEmBus 安装程序；NVIDIA 显卡驱动仍由系统提供，不随包安装。
 
 ### macOS DMG
 
-Run these commands on the Mac that will produce the application bundle:
+在 Mac 上执行：
 
 ```sh
 cmake -S . -B build-release -G Xcode \
@@ -138,12 +134,15 @@ cmake --build build-release --config Release
 cpack --config build-release/CPackConfig.cmake -C Release
 ```
 
-Open the generated `MiniStream-0.1.0-Darwin.dmg` and drag `MiniStream.app` to `Applications`. Qt deployment is generated from the target executable so the installed app carries its Qt/QML runtime.
+输出 `MiniStream.dmg`。打开 DMG 后将 `MiniStream.app` 拖到
+`Applications`，再从 Applications 启动。
 
-## Pinned dependencies
+## 当前版本边界
 
-The versions and source pins are kept in [`cmake/Dependencies.cmake`](cmake/Dependencies.cmake): Qt 6.11.2, Catch2 3.15.3, standalone Asio 1.38.2, SDL 3.4.14, Opus 1.5.2, libsodium 1.0.20, Leopard-RS at commit `6e5725ebdf9da4370b0bcc4f70fa8eb66f4e6198`, and ViGEmClient at commit `9e91a124d179bf26a878a952153042ac871da243`. The Windows installer downloads the signed ViGEmBus 1.22.0 setup during the packaging configure step and embeds it in the generated installer.
+- 仅支持同一局域网内的发现和连接，不包含账号、云服务、NAT 穿透或多控制器。
+- 编解码器和 HDR 状态由本机硬件能力决定；4K60、HEVC Main10/HDR10 和长时间
+  串流需要在目标 Windows/macOS 设备及显示器上单独验收。
+- macOS 的屏幕录制、辅助功能和音频权限由系统控制；Windows 手柄输入需要
+  ViGEmBus，键盘鼠标不依赖该驱动。
 
-## Release status
-
-The release gate is tracked in [`docs/release/v0.1-alpha-checklist.md`](docs/release/v0.1-alpha-checklist.md). The current Windows build and shared test suite are usable for development and integration work. A release claiming end-to-end 4K60 HDR streaming still requires target Windows and macOS hardware validation, including hardware encode/decode, Metal presentation, audio output, controller rumble, and long-session stability.
+发布检查项见 [`docs/release/v0.1-alpha-checklist.md`](docs/release/v0.1-alpha-checklist.md)。

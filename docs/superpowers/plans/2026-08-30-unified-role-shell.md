@@ -23,7 +23,7 @@
 - Hello and Accept carry explicit HandshakeRole values (Controller and Controlled); inverse role combinations are rejected.
 - All post-pairing CONTROL, INPUT, AUDIO, VIDEO, FEC, FEEDBACK, and TELEMETRY datagrams remain authenticated and encrypted, with a 1200-byte datagram limit.
 - Queues and latest-frame slots are bounded; stale video and input state may be dropped, but input leases are always released.
-- Remote mode never intercepts Esc or F11. Windows/Linux use Ctrl+Alt+R and Ctrl+Alt+F; macOS uses Command+Option+R and Command+Option+F.
+- Remote mode never intercepts Esc or F11. Windows/Linux use Ctrl+Alt+R; macOS uses Command+Option+R. F11 toggles fullscreen and local Esc leaves fullscreen.
 - User-facing copy is short, factual, and limited to software state. Do not add AI, marketing, or platform-fixed role wording.
 - Do not commit Qt SDKs, NVIDIA headers/binaries, driver installers, DMGs, installers, build directories, logs, captures, or performance dumps.
 
@@ -38,8 +38,9 @@
 - src/windows/platform/controlled_backend.* and src/windows/platform/remote_backend.*: Windows adapters.
 - src/macos/platform/controlled_backend.* and src/macos/platform/remote_backend.*: macOS adapters.
 - src/app/qt_main.cpp: shared Qt executable entry point.
-- ui/Main.qml: one window, mode switch, page loader, fullscreen/input shortcuts.
-- ui/components/RoleModeSwitch.qml: bounded top-center two-segment switch.
+- src/app/ui/video_surface_item.*: shared QML video surface contract; each
+  platform imports its native latest-frame texture without a CPU frame copy.
+- ui/Main.qml: one window, bounded top-center mode switch, direct page states, and fullscreen/input shortcuts.
 - ui/pages/ControlledPage.qml: capability and broadcast view.
 - ui/pages/RemotePage.qml: discovery cards and remote-session view.
 - ui/pages/PairingPage.qml and ui/pages/StreamPage.qml: shared pairing and stream states.
@@ -147,8 +148,6 @@ git push origin feat/ministream-v0.1
 - Create: src/app/remote/remote_runtime.cpp
 - Modify: src/core/session/discovery.hpp
 - Modify: src/core/session/discovery.cpp
-- Modify: src/macos/ui/client_controller.cpp
-- Modify: src/macos/ui/client_controller.hpp
 - Create: tests/session/remote_runtime_test.cpp
 - Modify: tests/session/discovery_test.cpp
 - Modify: tests/CMakeLists.txt
@@ -181,7 +180,7 @@ Move common portions of the current macOS client controller into RemoteRuntime: 
 .\build-ui\Debug\ministream_tests.exe "*remote runtime*"
 .\build-ui\Debug\ministream_tests.exe "*discovered device formatting*"
 git diff --check
-git add src/app/remote src/core/session/discovery.hpp src/core/session/discovery.cpp src/macos/ui/client_controller.cpp src/macos/ui/client_controller.hpp tests/session/remote_runtime_test.cpp tests/session/discovery_test.cpp tests/CMakeLists.txt
+git add src/app/remote src/core/session/discovery.hpp src/core/session/discovery.cpp tests/session/remote_runtime_test.cpp tests/session/discovery_test.cpp tests/CMakeLists.txt
 git commit -m "feat(session): add shared remote runtime"
 git push origin feat/ministream-v0.1
 ~~~
@@ -193,7 +192,6 @@ git push origin feat/ministream-v0.1
 - Create: src/app/ui/role_controller.cpp
 - Create: src/app/qt_main.cpp
 - Create: ui/Main.qml
-- Create: ui/components/RoleModeSwitch.qml
 - Create: ui/pages/ControlledPage.qml
 - Create: ui/pages/RemotePage.qml
 - Create: ui/pages/StreamPage.qml
@@ -208,8 +206,7 @@ git push origin feat/ministream-v0.1
 - Q_PROPERTY(int mode READ mode WRITE setMode NOTIFY modeChanged).
 - Q_PROPERTY(int state READ state NOTIFY stateChanged).
 - Q_PROPERTY(QObject* controlled READ controlled CONSTANT) and Q_PROPERTY(QObject* remote READ remote CONSTANT).
-- Q_INVOKABLE setMode(int), startBroadcast(), stopBroadcast(), findDevices(), connectToDevice(int), confirmPairing(), cancelPairing(), toggleRemoteInput(), releaseRemoteInput(), and toggleFullscreen().
-- RoleModeSwitch.qml has required property int mode, signal modeSelected(int), and width Math.min(parent.width - 32, 360).
+- Q_INVOKABLE setMode(int), startBroadcast(), stopBroadcast(), findDevices(), connectToDevice(int), confirmPairing(), cancelPairing(), toggleRemoteInput(), and releaseRemoteInput().
 
 - [ ] Step 1: Write failing shell and copy checks.
 
@@ -226,11 +223,11 @@ Expected: ui/Main.qml and the unified role copy are missing.
 
 - [ ] Step 3: Implement the Qt facade and QML shell.
 
-Register RoleController with the MiniStream QML module from src/app/qt_main.cpp. The facade creates both runtimes for the current platform, exposes read-only models, and performs cleanup before a mode change. Main.qml places RoleModeSwitch at the top center, loads ControlledPage or RemotePage, opens PairingPage and StreamPage for either runtime, and binds the approved fullscreen/input shortcuts. ControlledPage contains only capabilities and broadcast controls. RemotePage contains only discovery, pairing, stream, and input controls. Use bounded columns, wrapped parameter lines, and clipped ListView delegates.
+Register RoleController with the MiniStream QML module from src/app/qt_main.cpp. The facade creates both runtimes for the current platform, exposes read-only models, and performs cleanup before a mode change. Main.qml places a bounded two-segment switch at the top center, keeps the four page states in one window, and binds the approved fullscreen/input shortcuts. ControlledPage contains only capabilities and broadcast controls. RemotePage contains only discovery, pairing, stream, and input controls. Use bounded columns, wrapped parameter lines, and clipped ListView delegates.
 
 - [ ] Step 4: Update CMake to one application target.
 
-Replace separate Qt ministream_host and ministream_client targets with one ministream target per platform. Keep each platform's native backend sources in its target, link shared app/controller sources, and install the same QML module. Non-Qt diagnostic targets remain available for tests.
+Replace separate Qt host and client targets with one ministream target per platform. Keep each platform's native backend sources in its target, link shared app/controller sources, and install the same QML module. Non-Qt diagnostic targets remain available for tests.
 
 - [ ] Step 5: Run checks, build, and commit.
 
@@ -336,7 +333,7 @@ Request Screen Recording, Microphone, and Accessibility permissions only when co
 
 - [ ] Step 4: Complete remote decode, render, and output.
 
-Configure VideoToolbox from CodecConfig, publish only the newest pixel buffer to VideoSurfaceBridge, import NV12/P010 with CVMetalTextureCache, apply Rec.709/BT.2020/PQ in the Metal shader, and output decoded Opus through a bounded CoreAudio ring buffer. Keep the QML overlay in the same window.
+Configure VideoToolbox from CodecConfig, publish only the newest pixel buffer to VideoSurfaceBridge, import NV12/P010 through CVMetalTextureCache/Core Image on Metal, preserve the buffer color attachments for Rec.709/BT.2020/PQ mapping, and output decoded Opus through a bounded CoreAudio ring buffer. Keep the QML overlay in the same window.
 
 - [ ] Step 5: Commit the macOS boundary.
 
@@ -398,15 +395,12 @@ git push origin feat/ministream-v0.1
 - Modify: README.md
 - Modify: docs/superpowers/specs/2026-08-30-unified-role-shell-design.md
 - Inspect: docs/superpowers/plans/2026-08-30-unified-role-shell.md
-- Modify: packaging/CMakeLists.txt
-- Modify: packaging/installer.nsi
-- Modify: packaging/Info.plist.in
-- Create: tests/integration/unified_loopback_test.cpp
-- Modify: tests/CMakeLists.txt
+- Modify: packaging/Packaging.cmake
+- Inspect: existing session, transport, FEC, and input tests
 
-- [ ] Step 1: Add one local loopback integration test.
+- [ ] Step 1: Run the existing runtime and transport loopback coverage once.
 
-Start fake controlled and remote runtimes on loopback, complete role-bound Hello/Accept and six-digit confirmation, send one encrypted video, audio, and input packet, then disconnect and assert input capture is clear. Exercise one FEC loss and one IDR request without running a second complete soak.
+Use the existing session, packet, FEC, and input tests to cover role-bound Hello/Accept, encrypted media/control packets, input cleanup, one FEC loss, and bounded IDR recovery. Keep paired-device streaming and soak testing in the target-device acceptance checklist instead of adding a second bespoke loopback harness.
 
 - [ ] Step 2: Run complete source checks once.
 
@@ -444,7 +438,7 @@ git log -1 --oneline --decorate
 Commit and push:
 
 ~~~
-git add README.md docs/superpowers/specs/2026-08-30-unified-role-shell-design.md docs/superpowers/plans/2026-08-30-unified-role-shell.md packaging/CMakeLists.txt packaging/installer.nsi packaging/Info.plist.in tests/integration/unified_loopback_test.cpp tests/CMakeLists.txt
+git add README.md docs/superpowers/specs/2026-08-30-unified-role-shell-design.md docs/superpowers/plans/2026-08-30-unified-role-shell.md packaging/Packaging.cmake tests/CMakeLists.txt
 git commit -m "feat(release): package unified MiniStream roles"
 git push origin feat/ministream-v0.1
 ~~~
