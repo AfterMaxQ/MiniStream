@@ -9,6 +9,8 @@ if(MINISTREAM_BUILD_UI)
     input/sdl_gamepad.hpp
     video/videotoolbox_decoder.mm
     video/videotoolbox_decoder.hpp
+    video/video_surface_bridge.mm
+    video/video_surface_bridge.hpp
     audio/coreaudio_output.mm
     audio/coreaudio_output.hpp
   )

@@ -49,6 +49,7 @@ if(WIN32)
       windows/host_capabilities_test.cpp
       windows/dxgi_capture_test.cpp
       windows/wasapi_loopback_test.cpp
+      windows/nvenc_encoder_test.cpp
   )
   target_link_libraries(ministream_tests PRIVATE ministream_windows_platform)
   add_custom_command(
