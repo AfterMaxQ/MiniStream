@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 UI_ROOT = Path(__file__).parents[2] / "ui"
+ROLE_CONTROLLER = Path(__file__).parents[2] / "src" / "app" / "ui" / "role_controller.hpp"
 
 
 def test_role_shell_copy_is_short_and_directional() -> None:
@@ -27,9 +28,11 @@ def test_role_shell_copy_is_short_and_directional() -> None:
 
 def test_role_shell_has_bounded_mode_switch() -> None:
     source = (UI_ROOT / "Main.qml").read_text(encoding="utf-8")
+    controller = ROLE_CONTROLLER.read_text(encoding="utf-8")
     assert "Math.min" in source
     assert "roleController.setMode(1)" in source
     assert "roleController.setMode(2)" in source
+    assert "Q_INVOKABLE void setMode(int mode);" in controller
 
 
 if __name__ == "__main__":

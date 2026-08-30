@@ -48,7 +48,7 @@ class RoleController final : public QObject {
   ~RoleController() override;
 
   [[nodiscard]] int mode() const noexcept;
-  void setMode(int mode);
+  Q_INVOKABLE void setMode(int mode);
   [[nodiscard]] bool controlledAvailable() const noexcept;
   [[nodiscard]] bool remoteAvailable() const noexcept;
   [[nodiscard]] bool ready() const noexcept;
