@@ -22,6 +22,7 @@ struct WindowsControlledBackend::Impl {
   std::unique_ptr<VirtualGamepad> gamepad;
   CodecConfig requested{};
   CodecConfig active{};
+  std::uint32_t bitrate_bps{20'000'000};
   bool started{};
   bool configured{};
   std::function<void(const RumblePacket&)> rumble_sender;
@@ -36,7 +37,13 @@ ControlledCapabilities WindowsControlledBackend::inspect() const {
           {host.audio.ready, host.audio.detail},
           {host.input.ready, host.input.detail},
           {host.network.ready, host.network.detail},
-          {host.controller.ready, host.controller.detail}};
+          {host.controller.ready, host.controller.detail},
+          host.h264,
+          host.hevc,
+          host.hdr10,
+          host.max_width,
+          host.max_height,
+          host.max_fps};
 }
 
 bool WindowsControlledBackend::start() {
@@ -64,6 +71,7 @@ bool WindowsControlledBackend::start() {
   impl_->encoder = std::make_unique<NvencEncoder>();
   impl_->requested = {};
   impl_->active = {};
+  impl_->bitrate_bps = 20'000'000;
   impl_->configured = false;
   impl_->started = true;
   return true;
@@ -86,6 +94,7 @@ void WindowsControlledBackend::stop() noexcept {
   impl_->input.reset();
   impl_->requested = {};
   impl_->active = {};
+  impl_->bitrate_bps = 20'000'000;
   impl_->configured = false;
   impl_->started = false;
 }
@@ -107,6 +116,21 @@ bool WindowsControlledBackend::configure_video(const CodecConfig& config) {
   return true;
 }
 
+bool WindowsControlledBackend::reconfigure_bitrate(std::uint32_t bitrate_bps) {
+  if (!impl_->started || !impl_->encoder || bitrate_bps == 0) {
+    return false;
+  }
+  if (!impl_->encoder->ready()) {
+    impl_->bitrate_bps = bitrate_bps;
+    return true;
+  }
+  if (!impl_->encoder->reconfigure_bitrate(bitrate_bps)) {
+    return false;
+  }
+  impl_->bitrate_bps = bitrate_bps;
+  return true;
+}
+
 std::optional<EncodedFrame> WindowsControlledBackend::next_video() {
   if (!impl_->started || !impl_->capture || !impl_->encoder) {
     return std::nullopt;
@@ -115,29 +139,37 @@ std::optional<EncodedFrame> WindowsControlledBackend::next_video() {
   if (!captured) {
     return std::nullopt;
   }
+  auto frame = *captured;
+  if (impl_->configured &&
+      (frame.width != impl_->requested.width || frame.height != impl_->requested.height)) {
+    const auto resized = impl_->capture->resize(
+        frame, impl_->requested.width, impl_->requested.height);
+    if (!resized) {
+      return std::nullopt;
+    }
+    frame = *resized;
+  }
   if (!impl_->encoder->ready()) {
     const auto profile = stream_profile(StreamProfileId::Debug1080);
     const auto codec = impl_->configured ? impl_->requested.codec : profile.codec;
     const auto fps = impl_->configured ? impl_->requested.fps : profile.fps;
-    const auto bitrate = impl_->configured
-                             ? std::max<std::uint32_t>(1, impl_->requested.width >= 3'840
-                                                               ? 50'000'000U
-                                                               : 20'000'000U)
+    const auto bitrate = impl_->bitrate_bps != 0
+                             ? impl_->bitrate_bps
                              : static_cast<std::uint32_t>(profile.initial_bitrate_bps);
-    const NvencConfig config{codec, captured->width, captured->height, fps, bitrate, false};
+    const NvencConfig config{codec, frame.width, frame.height, fps, bitrate, false};
     if (!impl_->encoder->initialize(impl_->capture->device(), impl_->capture->context(), config)) {
       return std::nullopt;
     }
     impl_->active = impl_->encoder->codec_config();
     if (impl_->active.width == 0) {
-      impl_->active = {codec, captured->width, captured->height, fps, false, {}};
+      impl_->active = {codec, frame.width, frame.height, fps, false, {}};
     }
   }
   const auto timestamp = static_cast<std::uint64_t>(
       std::chrono::duration_cast<std::chrono::microseconds>(
-          captured->captured_at.time_since_epoch())
-          .count());
-  const auto encoded = impl_->encoder->encode(*captured, timestamp);
+          frame.captured_at.time_since_epoch())
+      .count());
+  const auto encoded = impl_->encoder->encode(frame, timestamp);
   if (!encoded) {
     return std::nullopt;
   }
@@ -166,6 +198,12 @@ bool WindowsControlledBackend::inject_input(const DesktopInput& input) {
 
 bool WindowsControlledBackend::submit_gamepad(const GamepadState& state) {
   return impl_->started && impl_->gamepad && impl_->gamepad->submit(state);
+}
+
+void WindowsControlledBackend::clear_gamepad() noexcept {
+  if (impl_->gamepad) {
+    (void)impl_->gamepad->submit(GamepadState{});
+  }
 }
 
 void WindowsControlledBackend::set_rumble_sender(

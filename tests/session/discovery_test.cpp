@@ -2,7 +2,33 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
+#include <vector>
+
 using namespace ministream;
+
+TEST_CASE("LAN discovery calculates directed broadcasts from injected interfaces") {
+  REQUIRE(directed_broadcast({192, 168, 1, 20}, {255, 255, 255, 0}) ==
+          std::optional<std::array<std::uint8_t, 4>>{{192, 168, 1, 255}});
+  REQUIRE(directed_broadcast({10, 0, 0, 7}, {255, 255, 0, 0}) ==
+          std::optional<std::array<std::uint8_t, 4>>{{10, 0, 255, 255}});
+  REQUIRE_FALSE(directed_broadcast({10, 0, 0, 7}, {255, 255, 255, 255}).has_value());
+  REQUIRE_FALSE(directed_broadcast({10, 0, 0, 7}, {255, 0, 255, 0}).has_value());
+
+  const std::vector<DiscoveryInterface> interfaces{
+      {"en0", {192, 168, 1, 20}, {255, 255, 255, 0}, true, false},
+      {"utun0", {100, 64, 0, 2}, {255, 255, 255, 255}, true, false},
+      {"lo0", {127, 0, 0, 1}, {255, 0, 0, 0}, true, true},
+      {"down0", {172, 16, 0, 2}, {255, 255, 0, 0}, false, false},
+  };
+  REQUIRE(discovery_targets(interfaces) ==
+          std::vector<std::array<std::uint8_t, 4>>{{192, 168, 1, 255}, {255, 255, 255, 255}});
+
+  const std::vector<DiscoveryInterface> point_to_point{
+      {"utun0", {100, 64, 0, 2}, {255, 255, 255, 255}, true, false}};
+  REQUIRE(discovery_targets(point_to_point) ==
+          std::vector<std::array<std::uint8_t, 4>>{{255, 255, 255, 255}});
+}
 
 TEST_CASE("LAN discovery advertisement has a bounded validated wire format") {
   const DiscoveryAdvertisement advertisement{

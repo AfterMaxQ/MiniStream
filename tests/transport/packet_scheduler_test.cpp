@@ -35,6 +35,7 @@ TEST_CASE("packet scheduler drops expired deadline-driven work") {
 TEST_CASE("packet scheduler reports video serialization delay") {
   PacketScheduler scheduler;
   scheduler.set_video_rate(1'000'000);
+  REQUIRE(scheduler.video_rate_bps() == 1'000'000);
   const auto now = SteadyClock::time_point{};
   scheduler.enqueue(Priority::Video, marked(std::byte{1}, 1000), now + 1s);
   scheduler.enqueue(Priority::Video, marked(std::byte{2}, 1000), now + 1s);

@@ -1,4 +1,4 @@
-#include "macos/video/screencapturekit_capture.hpp"
+#include "macos/video/cgdisplaystream_capture.hpp"
 
 #import <CoreGraphics/CoreGraphics.h>
 #import <CoreVideo/CoreVideo.h>
@@ -12,7 +12,7 @@
 
 namespace ministream {
 
-struct ScreenCaptureKitCapture::Impl {
+struct CGDisplayStreamCapture::Impl {
   CGDisplayStreamRef stream{};
   CVPixelBufferRef latest{};
   std::uint64_t latest_timestamp_us{};
@@ -21,12 +21,13 @@ struct ScreenCaptureKitCapture::Impl {
   std::mutex mutex;
 };
 
-ScreenCaptureKitCapture::ScreenCaptureKitCapture() : impl_(std::make_unique<Impl>()) {}
-ScreenCaptureKitCapture::~ScreenCaptureKitCapture() { stop(); }
-ScreenCaptureKitCapture::ScreenCaptureKitCapture(ScreenCaptureKitCapture&&) noexcept = default;
-ScreenCaptureKitCapture& ScreenCaptureKitCapture::operator=(ScreenCaptureKitCapture&&) noexcept = default;
+CGDisplayStreamCapture::CGDisplayStreamCapture() : impl_(std::make_unique<Impl>()) {}
+CGDisplayStreamCapture::~CGDisplayStreamCapture() { stop(); }
+CGDisplayStreamCapture::CGDisplayStreamCapture(CGDisplayStreamCapture&&) noexcept = default;
+CGDisplayStreamCapture& CGDisplayStreamCapture::operator=(CGDisplayStreamCapture&&) noexcept = default;
 
-Result<void, DisplayCaptureError> ScreenCaptureKitCapture::start() {
+Result<void, DisplayCaptureError> CGDisplayStreamCapture::start(std::uint32_t width,
+                                                                std::uint32_t height) {
   stop();
   if (@available(macOS 10.15, *)) {
     if (!CGPreflightScreenCaptureAccess()) {
@@ -35,13 +36,17 @@ Result<void, DisplayCaptureError> ScreenCaptureKitCapture::start() {
     }
   }
   const auto display = CGMainDisplayID();
-  const auto width = static_cast<std::uint32_t>(CGDisplayPixelsWide(display));
-  const auto height = static_cast<std::uint32_t>(CGDisplayPixelsHigh(display));
-  if (width == 0 || height == 0) {
+  const auto native_width = static_cast<std::uint32_t>(CGDisplayPixelsWide(display));
+  const auto native_height = static_cast<std::uint32_t>(CGDisplayPixelsHigh(display));
+  if (native_width == 0 || native_height == 0) {
     return Result<void, DisplayCaptureError>::err(DisplayCaptureError::Initialize);
   }
-  impl_->width = width;
-  impl_->height = height;
+  impl_->width = width == 0 ? native_width : width;
+  impl_->height = height == 0 ? native_height : height;
+  if (impl_->width == 0 || impl_->height == 0 || impl_->width > native_width ||
+      impl_->height > native_height) {
+    return Result<void, DisplayCaptureError>::err(DisplayCaptureError::Initialize);
+  }
   NSDictionary* properties = @{
       (__bridge NSString*)kCGDisplayStreamShowCursor: @NO,
   };
@@ -49,9 +54,10 @@ Result<void, DisplayCaptureError> ScreenCaptureKitCapture::start() {
                                                   DISPATCH_QUEUE_SERIAL);
   auto* weak_impl = impl_.get();
   impl_->stream = CGDisplayStreamCreateWithDispatchQueue(
-      display, width, height, kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)properties,
-      queue, ^(CGDisplayStreamFrameStatus status, uint64_t display_time,
-               IOSurfaceRef surface, CGDisplayStreamUpdateRef) {
+      display, impl_->width, impl_->height, kCVPixelFormatType_32BGRA,
+      (__bridge CFDictionaryRef)properties, queue,
+      ^(CGDisplayStreamFrameStatus status, uint64_t display_time,
+        IOSurfaceRef surface, CGDisplayStreamUpdateRef) {
         auto* impl = weak_impl;
         if (!impl || status != kCGDisplayStreamFrameStatusFrameComplete || !surface) {
           return;
@@ -81,7 +87,7 @@ Result<void, DisplayCaptureError> ScreenCaptureKitCapture::start() {
   return Result<void, DisplayCaptureError>::ok();
 }
 
-std::optional<CapturedDisplayFrame> ScreenCaptureKitCapture::take_latest() {
+std::optional<CapturedDisplayFrame> CGDisplayStreamCapture::take_latest() {
   std::scoped_lock lock(impl_->mutex);
   if (!impl_->latest) {
     return std::nullopt;
@@ -92,7 +98,7 @@ std::optional<CapturedDisplayFrame> ScreenCaptureKitCapture::take_latest() {
   return result;
 }
 
-void ScreenCaptureKitCapture::stop() noexcept {
+void CGDisplayStreamCapture::stop() noexcept {
   if (!impl_) {
     return;
   }

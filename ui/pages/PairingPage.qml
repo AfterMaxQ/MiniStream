@@ -41,7 +41,11 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Tokens.space12
             AppButton { text: "Cancel"; onClicked: root.controller.cancelPairing() }
-            AppButton { text: "Confirm"; onClicked: root.controller.confirmPairing() }
+            AppButton {
+                text: "Confirm"
+                enabled: root.controller.pairingCode.length === 6
+                onClicked: root.controller.confirmPairing()
+            }
         }
     }
 }

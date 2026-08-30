@@ -23,10 +23,21 @@ Item {
             }
             AppButton {
                 id: findButton
-                text: root.controller.searching ? "Searching" : "Find devices"
-                enabled: !root.controller.searching
+                text: root.controller.connecting
+                      ? "Connecting"
+                      : (root.controller.searching ? "Searching" : "Find devices")
+                enabled: !root.controller.searching && !root.controller.connecting
                 onClicked: root.controller.findDevices()
             }
+        }
+
+        Text {
+            width: parent.width
+            visible: root.controller.connecting
+            text: "Connecting to " + root.controller.selectedDeviceLabel
+            color: Tokens.textMuted
+            font.pixelSize: 13
+            elide: Text.ElideRight
         }
 
         SectionHeader { text: "Nearby devices" }
@@ -85,6 +96,7 @@ Item {
                             id: connectButton
                             anchors.verticalCenter: parent.verticalCenter
                             text: "Connect"
+                            enabled: !root.controller.connecting
                             onClicked: root.controller.connectToDevice(index)
                         }
                     }
@@ -93,7 +105,9 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     visible: deviceList.count === 0
-                    text: root.controller.searching ? "Searching local network" : "No devices found"
+                    text: root.controller.searching
+                          ? "Searching local network"
+                          : root.controller.statusText
                     color: Tokens.textMuted
                     font.pixelSize: 14
                 }

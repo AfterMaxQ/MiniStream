@@ -142,10 +142,10 @@ reports the capability error.
 
 ### macOS
 
-Controlled mode uses ScreenCaptureKit for display capture, VideoToolbox for
-hardware H.264/HEVC encoding, CoreAudio for 48 kHz stereo capture, and the
-Accessibility-approved event injector for keyboard/mouse input. SDL3 supplies
-optional gamepad input.
+Controlled mode uses CGDisplayStream for display capture, VideoToolbox for
+hardware H.264/HEVC encoding, ScreenCaptureKit for 48 kHz stereo system audio,
+and the Accessibility-approved event injector for keyboard/mouse input. SDL3
+supplies optional gamepad input.
 
 Remote mode uses the existing VideoToolbox decoder, CVPixelBuffer latest-frame
 bridge, Metal/Qt Quick surface, CoreAudio output, and SDL3 input. The Metal
@@ -153,8 +153,8 @@ surface remains in the same Qt window as the QML overlay; fullscreen never
 creates a second native video window.
 
 The application requests permissions only when a mode first needs them:
-Screen Recording and Microphone for controlled media capture, and Accessibility
-for controlled input injection. A denied permission returns a direct action
+Screen Recording for controlled display and system-audio capture, and
+Accessibility for controlled input injection. A denied permission returns a direct action
 such as **Open System Settings** or **Allow access**, without pretending that
 the capability is ready.
 
@@ -229,9 +229,9 @@ rejected rather than silently assigned a platform role.
   discovery filtering, packet size limits, and latest-frame ownership.
 - Windows tests cover DXGI/NVENC encode, Media Foundation decode, WASAPI
   capture/output, optional ViGEm, and one Controlled/Remote loopback.
-- macOS tests cover ScreenCaptureKit/VideoToolbox encode/decode, Metal surface,
-  CoreAudio capture/output, permissions, and one local loopback where hardware
-  is available.
+- macOS tests cover CGDisplayStream/VideoToolbox encode/decode, Metal surface,
+  ScreenCaptureKit system audio, CoreAudio output, permissions, and one local
+  loopback where hardware is available.
 - UI checks cover the two-segment switch, minimum/wide window sizes, long
   names, fullscreen, mode switching, pairing, disconnect, and input release.
 - Release checks build one `ministream` executable per platform, deploy Qt

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/audio/audio_packet.hpp"
+#include "core/fec/video_fec.hpp"
 #include "core/security/session_crypto.hpp"
 #include "core/transport/packet_scheduler.hpp"
 #include "core/transport/reassembler.hpp"
@@ -21,6 +22,8 @@ class MediaSender {
 
   std::size_t enqueue_video(const EncodedFrame& frame, SteadyClock::time_point now,
                             Microseconds deadline = Microseconds{25'000});
+  void set_fec_ratio(double ratio) noexcept;
+  [[nodiscard]] double fec_ratio() const noexcept;
   bool enqueue_audio(const AudioPacket& packet, SteadyClock::time_point now,
                      Microseconds deadline = Microseconds{40'000});
 
@@ -28,6 +31,7 @@ class MediaSender {
   SessionId session_id_;
   SessionCrypto& crypto_;
   PacketScheduler& scheduler_;
+  double fec_ratio_{};
 };
 
 class MediaReceiver {
@@ -37,8 +41,14 @@ class MediaReceiver {
 
   std::optional<EncodedFrame> receive_video(const Datagram& encrypted,
                                             SteadyClock::time_point now);
+  std::optional<EncodedFrame> receive_video_fec(const Datagram& encrypted,
+                                                SteadyClock::time_point now);
   std::optional<AudioPacket> receive_audio(const Datagram& encrypted);
   std::vector<std::uint32_t> expire_video(SteadyClock::time_point now);
+  [[nodiscard]] std::uint64_t fec_recovered_frames() const noexcept;
+  [[nodiscard]] std::uint64_t fec_unrecoverable_frames() const noexcept;
+  [[nodiscard]] std::uint64_t received_video_packets() const noexcept;
+  [[nodiscard]] std::uint64_t lost_video_packets() const noexcept;
 
  private:
   std::optional<std::vector<std::byte>> open(PacketType expected,
@@ -46,7 +56,11 @@ class MediaReceiver {
 
   SessionId session_id_;
   SessionCrypto& crypto_;
-  FrameReassembler reassembler_;
+  VideoFecReassembler reassembler_;
+  std::optional<std::uint32_t> last_video_sequence_;
+  std::optional<std::uint32_t> last_video_frame_id_;
+  std::uint64_t received_video_packets_{};
+  std::uint64_t lost_video_packets_{};
 };
 
 }  // namespace ministream

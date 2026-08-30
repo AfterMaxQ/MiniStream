@@ -12,6 +12,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace ministream {
 
@@ -33,6 +34,10 @@ class UdpEndpoint {
   Result<std::size_t, NetError> reply(std::span<const std::byte> bytes);
   Result<ReceivedDatagram, NetError> receive(Microseconds timeout);
   std::optional<ReceivedDatagram> try_receive();
+  std::vector<ReceivedDatagram> try_receive_batch(std::size_t max_packets);
+  Result<void, NetError> lock_peer(const ReceivedDatagram& incoming);
+  void clear_peer() noexcept;
+  [[nodiscard]] bool peer_locked() const noexcept;
   [[nodiscard]] std::uint16_t local_port() const;
 
  private:
@@ -41,7 +46,7 @@ class UdpEndpoint {
   asio::io_context io_;
   asio::ip::udp::socket socket_;
   std::optional<asio::ip::udp::endpoint> remote_;
-  std::optional<asio::ip::udp::endpoint> last_sender_;
+  bool peer_locked_{};
 };
 
 }  // namespace ministream

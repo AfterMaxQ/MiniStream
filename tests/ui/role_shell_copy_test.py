@@ -24,6 +24,8 @@ def test_role_shell_copy_is_short_and_directional() -> None:
     assert "This Mac" not in remote
     assert "roleController.setMode(1)" in main
     assert "roleController.setMode(2)" in main
+    assert "root.controller.connecting" in remote
+    assert 'text: "Connecting to " + root.controller.selectedDeviceLabel' in remote
 
 
 def test_role_shell_has_bounded_mode_switch() -> None:
@@ -35,7 +37,23 @@ def test_role_shell_has_bounded_mode_switch() -> None:
     assert "Q_INVOKABLE void setMode(int mode);" in controller
 
 
+def test_role_controller_notifies_qml_after_runtime_state_changes() -> None:
+    controller = ROLE_CONTROLLER.with_name("role_controller.cpp")
+    source = controller.read_text(encoding="utf-8")
+    assert "const auto before_state =" in source
+    assert "const auto after_state =" in source
+    assert "if (before_state != after_state)" in source
+
+
+def test_pairing_does_not_activate_the_stream_shell() -> None:
+    source = ROLE_CONTROLLER.with_name("role_controller.cpp").read_text(encoding="utf-8")
+    assert "return controlled_ && controlled_->streaming();" in source
+    assert "return remote_ && remote_->streaming();" in source
+
+
 if __name__ == "__main__":
     test_role_shell_copy_is_short_and_directional()
     test_role_shell_has_bounded_mode_switch()
+    test_role_controller_notifies_qml_after_runtime_state_changes()
+    test_pairing_does_not_activate_the_stream_shell()
     print("Role shell copy check passed")

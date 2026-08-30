@@ -18,6 +18,7 @@ class PacketScheduler {
   bool enqueue(Priority priority, Datagram datagram, SteadyClock::time_point deadline);
   std::optional<Datagram> next(SteadyClock::time_point now);
   [[nodiscard]] Microseconds estimated_video_queue_delay() const;
+  [[nodiscard]] std::uint64_t video_rate_bps() const noexcept;
   void set_video_rate(std::uint64_t bits_per_second);
 
  private:

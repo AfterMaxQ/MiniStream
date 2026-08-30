@@ -6,16 +6,31 @@
 #include <algorithm>
 
 namespace ministream {
+namespace {
+
+bool sequence_newer(std::uint32_t current, std::uint32_t previous) noexcept {
+  return static_cast<std::int32_t>(current - previous) > 0;
+}
+
+}  // namespace
+
 
 MediaSender::MediaSender(SessionId session_id, SessionCrypto& crypto,
                          PacketScheduler& scheduler)
     : session_id_(session_id), crypto_(crypto), scheduler_(scheduler) {}
 
+void MediaSender::set_fec_ratio(double ratio) noexcept {
+  fec_ratio_ = std::clamp(ratio, 0.0, 1.0);
+}
+
+double MediaSender::fec_ratio() const noexcept { return fec_ratio_; }
+
 std::size_t MediaSender::enqueue_video(const EncodedFrame& frame,
                                        SteadyClock::time_point now,
                                        Microseconds deadline) {
   std::size_t queued = 0;
-  for (const auto& packet : packetize_video(frame, session_id_)) {
+  const auto fec_frame = VideoFecEncoder{session_id_}.encode_frame(frame, fec_ratio_);
+  for (const auto& packet : fec_frame.video_datagrams) {
     const auto bytes = std::span<const std::byte>{packet.bytes};
     const auto common = decode_common_header(bytes.first<kCommonHeaderBytes>());
     if (!common || bytes.size() != kCommonHeaderBytes + common->payload_bytes) {
@@ -27,6 +42,22 @@ std::size_t MediaSender::enqueue_video(const EncodedFrame& frame,
       continue;
     }
     ++queued;
+  }
+  for (const auto& packet : fec_frame.fec_datagrams) {
+    const auto bytes = std::span<const std::byte>{packet.bytes};
+    if (bytes.size() < kCommonHeaderBytes) {
+      continue;
+    }
+    const auto common = decode_common_header(bytes.first<kCommonHeaderBytes>());
+    if (!common || common->type != PacketType::VideoFec ||
+        bytes.size() != kCommonHeaderBytes + common->payload_bytes) {
+      continue;
+    }
+    const auto sealed = crypto_.seal(PacketType::VideoFec,
+                                     bytes.subspan(kCommonHeaderBytes));
+    if (sealed && scheduler_.enqueue(Priority::Video, *sealed, now + deadline)) {
+      ++queued;
+    }
   }
   return queued;
 }
@@ -75,7 +106,28 @@ std::optional<EncodedFrame> MediaReceiver::receive_video(
   packet.bytes.reserve(header.size() + plaintext->size());
   packet.bytes.insert(packet.bytes.end(), header.begin(), header.end());
   packet.bytes.insert(packet.bytes.end(), plaintext->begin(), plaintext->end());
-  return reassembler_.push(packet, now);
+  const auto shard = parse_video_datagram(packet);
+  if (!shard) {
+    return std::nullopt;
+  }
+  ++received_video_packets_;
+  if (!last_video_sequence_ || sequence_newer(shard->header.packet_seq, *last_video_sequence_)) {
+    if (last_video_frame_id_ && *last_video_frame_id_ == shard->header.frame_id) {
+      const auto gap = shard->header.packet_seq - *last_video_sequence_;
+      if (gap > 1U && gap <= kMaxVideoShards) {
+        lost_video_packets_ += gap - 1U;
+      }
+    }
+    last_video_sequence_ = shard->header.packet_seq;
+    last_video_frame_id_ = shard->header.frame_id;
+  }
+  return reassembler_.push_data(*shard, now);
+}
+
+std::optional<EncodedFrame> MediaReceiver::receive_video_fec(
+    const Datagram& encrypted, SteadyClock::time_point now) {
+  auto plaintext = open(PacketType::VideoFec, encrypted);
+  return plaintext ? reassembler_.push_parity(*plaintext, now) : std::nullopt;
 }
 
 std::optional<AudioPacket> MediaReceiver::receive_audio(const Datagram& encrypted) {
@@ -88,6 +140,22 @@ std::optional<AudioPacket> MediaReceiver::receive_audio(const Datagram& encrypte
 
 std::vector<std::uint32_t> MediaReceiver::expire_video(SteadyClock::time_point now) {
   return reassembler_.expire(now);
+}
+
+std::uint64_t MediaReceiver::fec_recovered_frames() const noexcept {
+  return reassembler_.recovered_frames();
+}
+
+std::uint64_t MediaReceiver::fec_unrecoverable_frames() const noexcept {
+  return reassembler_.unrecoverable_frames();
+}
+
+std::uint64_t MediaReceiver::received_video_packets() const noexcept {
+  return received_video_packets_;
+}
+
+std::uint64_t MediaReceiver::lost_video_packets() const noexcept {
+  return lost_video_packets_;
 }
 
 }  // namespace ministream

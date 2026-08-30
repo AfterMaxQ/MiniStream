@@ -23,6 +23,12 @@ if(WIN32)
   set(CPACK_NSIS_CREATE_ICONS_EXTRA
       "CreateShortCut '$DESKTOP\\MiniStream.lnk' '$INSTDIR\\bin\\ministream.exe'")
   set(CPACK_NSIS_DELETE_ICONS_EXTRA "Delete '$DESKTOP\\MiniStream.lnk'")
+  file(READ "${PROJECT_SOURCE_DIR}/packaging/windows/ministream_firewall_install.nsh"
+       _ministream_firewall_install)
+  file(READ "${PROJECT_SOURCE_DIR}/packaging/windows/ministream_firewall_uninstall.nsh"
+       _ministream_firewall_uninstall)
+  set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "${_ministream_firewall_install}")
+  set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "${_ministream_firewall_uninstall}")
 
   set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT Runtime)
   include(InstallRequiredSystemLibraries)
@@ -47,7 +53,8 @@ if(WIN32)
     COMPONENT Runtime
   )
   set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
-      "ReadRegStr $0 HKLM 'SYSTEM\\CurrentControlSet\\Services\\ViGEmBus' 'ImagePath'\n\
+      "${_ministream_firewall_install}\n\
+       ReadRegStr $0 HKLM 'SYSTEM\\CurrentControlSet\\Services\\ViGEmBus' 'ImagePath'\n\
        StrCmp $0 '' 0 MiniStreamDriverDone\n\
        MessageBox MB_YESNO|MB_ICONQUESTION 'MiniStream needs a virtual controller driver. Install ViGEmBus now?' IDNO MiniStreamDriverDone\n\
        ExecWait '\"$INSTDIR\\drivers\\ViGEmBus_1.22.0_x64_x86_arm64.exe\" /exenoui /qn /norestart' $1\n\
@@ -57,6 +64,20 @@ elseif(APPLE)
   set(CPACK_PACKAGE_FILE_NAME "MiniStream")
   set(CPACK_DMG_VOLUME_NAME "MiniStream")
   set(CPACK_DMG_FORMAT UDZO)
+  get_filename_component(_ministream_sodium_name "${MINISTREAM_SODIUM_LIBRARY}" NAME)
+  install(
+    FILES "${MINISTREAM_SODIUM_LIBRARY}"
+    DESTINATION "MiniStream.app/Contents/Frameworks"
+    RENAME "${_ministream_sodium_name}"
+    COMPONENT Runtime
+  )
+  install(CODE "
+    set(_ministream_binary \"\${CMAKE_INSTALL_PREFIX}/MiniStream.app/Contents/MacOS/ministream\")
+    set(_ministream_sodium \"\${CMAKE_INSTALL_PREFIX}/MiniStream.app/Contents/Frameworks/${_ministream_sodium_name}\")
+    execute_process(COMMAND install_name_tool -id \"@rpath/${_ministream_sodium_name}\" \"\${_ministream_sodium}\")
+    execute_process(COMMAND install_name_tool -add_rpath \"@loader_path/../Frameworks\" \"\${_ministream_binary}\")
+    execute_process(COMMAND install_name_tool -change \"${MINISTREAM_SODIUM_LIBRARY}\" \"@rpath/${_ministream_sodium_name}\" \"\${_ministream_binary}\")
+  ")
 endif()
 
 include(CPack)

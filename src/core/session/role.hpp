@@ -11,6 +11,7 @@ enum class RoleState : std::uint8_t {
   ControlledReady,
   Broadcasting,
   RemoteBrowsing,
+  RemoteConnecting,
   Pairing,
   Streaming,
 };

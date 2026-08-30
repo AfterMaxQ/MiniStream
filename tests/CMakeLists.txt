@@ -34,15 +34,20 @@ add_executable(
   input/rumble_packet_test.cpp
   session/session_runtime_test.cpp
   telemetry/stream_aggregator_test.cpp
+  telemetry/feedback_wire_test.cpp
   config/stream_profile_test.cpp
   video/codec_config_wire_test.cpp
   session/discovery_test.cpp
   session/controlled_runtime_test.cpp
   session/remote_runtime_test.cpp
   security/pairing_wire_test.cpp
+  integration/remote_control_integration_test.cpp
 )
 target_link_libraries(ministream_tests PRIVATE ministream_app MiniStream::Core Catch2::Catch2WithMain)
-target_include_directories(ministream_tests PRIVATE "${PROJECT_SOURCE_DIR}/tools")
+target_include_directories(
+  ministream_tests
+  PRIVATE "${PROJECT_SOURCE_DIR}/tools" "${PROJECT_SOURCE_DIR}/tests"
+)
 ministream_set_warnings(ministream_tests)
 
 if(WIN32)

@@ -55,6 +55,8 @@ Microseconds PacketScheduler::estimated_video_queue_delay() const {
   return Microseconds{delay};
 }
 
+std::uint64_t PacketScheduler::video_rate_bps() const noexcept { return video_rate_bps_; }
+
 void PacketScheduler::set_video_rate(std::uint64_t bits_per_second) {
   video_rate_bps_ = bits_per_second;
   video_tokens_bits_ = static_cast<double>(kMaxDatagramBytes * 16);

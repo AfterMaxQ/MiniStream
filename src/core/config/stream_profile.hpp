@@ -1,8 +1,11 @@
 #pragma once
 
 #include "core/video/codec_config.hpp"
+#include "core/session/discovery.hpp"
+#include "platform/capabilities.hpp"
 
 #include <cstdint>
+#include <optional>
 
 namespace ministream {
 
@@ -21,5 +24,7 @@ struct StreamProfile {
 };
 
 StreamProfile stream_profile(StreamProfileId id) noexcept;
+std::optional<StreamProfile> select_common_stream_profile(
+    const DiscoveredHost& host, const RemoteCapabilities& remote) noexcept;
 
 }  // namespace ministream

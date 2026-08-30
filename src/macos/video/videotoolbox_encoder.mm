@@ -4,6 +4,7 @@
 #import <VideoToolbox/VideoToolbox.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <mutex>
 #include <utility>
@@ -117,6 +118,14 @@ void output_callback(void* refcon, void*, OSStatus status, VTEncodeInfoFlags,
   if (bytes.empty()) {
     return;
   }
+  std::uint64_t timestamp_us = 0;
+  const auto pts = CMSampleBufferGetPresentationTimeStamp(sample);
+  if (CMTIME_IS_VALID(pts) && pts.timescale != 0) {
+    const auto seconds = CMTimeGetSeconds(pts);
+    if (std::isfinite(seconds) && seconds >= 0.0) {
+      timestamp_us = static_cast<std::uint64_t>(seconds * 1'000'000.0);
+    }
+  }
   bool keyframe = false;
   if (auto attachments = CMSampleBufferGetSampleAttachmentsArray(sample, false);
       attachments && CFArrayGetCount(attachments) > 0) {
@@ -125,7 +134,7 @@ void output_callback(void* refcon, void*, OSStatus status, VTEncodeInfoFlags,
     keyframe = !CFDictionaryContainsKey(dictionary, kCMSampleAttachmentKey_NotSync);
   }
   std::scoped_lock lock(impl->mutex);
-  impl->latest = {impl->next_frame_id++, 0, keyframe,
+  impl->latest = {impl->next_frame_id++, timestamp_us, keyframe,
                   std::move(bytes)};
   impl->has_latest = true;
   if (keyframe) {
@@ -193,10 +202,10 @@ Result<void, VideoEncodeError> VideoToolboxEncoder::start(VideoEncodeConfig conf
   return Result<void, VideoEncodeError>::ok();
 }
 
-Result<EncodedFrame, VideoEncodeError> VideoToolboxEncoder::encode(
+Result<void, VideoEncodeError> VideoToolboxEncoder::submit(
     CVPixelBufferRef pixel_buffer, std::uint64_t timestamp_us, bool force_idr) {
   if (!ready() || !pixel_buffer) {
-    return Result<EncodedFrame, VideoEncodeError>::err(VideoEncodeError::Unavailable);
+    return Result<void, VideoEncodeError>::err(VideoEncodeError::Unavailable);
   }
   CFDictionaryRef properties = nullptr;
   if (force_idr) {
@@ -208,17 +217,39 @@ Result<EncodedFrame, VideoEncodeError> VideoToolboxEncoder::encode(
   const auto duration = CMTimeMake(1, static_cast<int32_t>(impl_->config.fps));
   const auto status = VTCompressionSessionEncodeFrame(impl_->session, pixel_buffer, pts,
                                                       duration, properties, nullptr, nullptr);
-  if (status != noErr || VTCompressionSessionCompleteFrames(impl_->session, kCMTimeInvalid) != noErr) {
-    return Result<EncodedFrame, VideoEncodeError>::err(VideoEncodeError::Encode);
+  if (status != noErr) {
+    return Result<void, VideoEncodeError>::err(VideoEncodeError::Encode);
+  }
+  return Result<void, VideoEncodeError>::ok();
+}
+
+std::optional<EncodedFrame> VideoToolboxEncoder::take_latest() {
+  if (!impl_) {
+    return std::nullopt;
   }
   std::scoped_lock lock(impl_->mutex);
   if (!impl_->has_latest) {
-    return Result<EncodedFrame, VideoEncodeError>::err(VideoEncodeError::Encode);
+    return std::nullopt;
   }
   auto result = std::move(impl_->latest);
   impl_->latest = {};
   impl_->has_latest = false;
-  result.capture_timestamp_us = timestamp_us;
+  return result;
+}
+
+Result<EncodedFrame, VideoEncodeError> VideoToolboxEncoder::encode(
+    CVPixelBufferRef pixel_buffer, std::uint64_t timestamp_us, bool force_idr) {
+  if (const auto submitted = submit(pixel_buffer, timestamp_us, force_idr); !submitted) {
+    return Result<EncodedFrame, VideoEncodeError>::err(submitted.error());
+  }
+  const auto latest = take_latest();
+  if (!latest) {
+    return Result<EncodedFrame, VideoEncodeError>::err(VideoEncodeError::Encode);
+  }
+  auto result = *latest;
+  if (result.capture_timestamp_us == 0) {
+    result.capture_timestamp_us = timestamp_us;
+  }
   return Result<EncodedFrame, VideoEncodeError>::ok(std::move(result));
 }
 
@@ -234,10 +265,31 @@ void VideoToolboxEncoder::stop() noexcept {
   impl_->latest = {};
   impl_->has_latest = false;
   impl_->next_frame_id = 0;
+  impl_->config = {};
   impl_->codec_config = {};
 }
 
+Result<void, VideoEncodeError> VideoToolboxEncoder::reconfigure_bitrate(
+    std::uint32_t bitrate_bps) {
+  if (!ready() || bitrate_bps == 0) {
+    return Result<void, VideoEncodeError>::err(ready() ? VideoEncodeError::InvalidConfig
+                                                        : VideoEncodeError::Unavailable);
+  }
+  if (VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_AverageBitRate,
+                           (__bridge CFTypeRef)@(bitrate_bps)) != noErr) {
+    return Result<void, VideoEncodeError>::err(VideoEncodeError::Reconfigure);
+  }
+  impl_->config.bitrate_bps = bitrate_bps;
+  return Result<void, VideoEncodeError>::ok();
+}
+
 bool VideoToolboxEncoder::ready() const noexcept { return impl_ && impl_->session != nullptr; }
-const CodecConfig& VideoToolboxEncoder::codec_config() const noexcept { return impl_->codec_config; }
+CodecConfig VideoToolboxEncoder::codec_config() const {
+  if (!impl_) {
+    return {};
+  }
+  std::scoped_lock lock(impl_->mutex);
+  return impl_->codec_config;
+}
 
 }  // namespace ministream

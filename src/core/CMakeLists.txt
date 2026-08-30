@@ -12,6 +12,7 @@ add_library(
   net/fault_injector.cpp
   adaptation/rate_controller.cpp
   fec/fec_codec.cpp
+  fec/video_fec.cpp
   security/pairing.cpp
   security/session_crypto.cpp
   session/handshake.cpp
@@ -29,6 +30,7 @@ add_library(
   session/session_runtime.cpp
   session/role.cpp
   telemetry/stream_aggregator.cpp
+  telemetry/feedback_wire.cpp
   config/stream_profile.cpp
   video/codec_config_wire.cpp
   session/discovery.cpp
@@ -48,4 +50,7 @@ target_link_libraries(
   PRIVATE ministream_leopard ministream_sodium ${MINISTREAM_OPUS_TARGET}
   PUBLIC ministream_asio
 )
+if(WIN32)
+  target_link_libraries(ministream_core PRIVATE iphlpapi)
+endif()
 ministream_set_warnings(ministream_core)

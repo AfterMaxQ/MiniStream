@@ -25,6 +25,7 @@ class MacRemoteBackend final : public RemoteBackend {
   bool play_audio(std::span<const float> interleaved_stereo) override;
   void play_rumble(std::uint16_t low, std::uint16_t high,
                    std::uint32_t duration_ms) override;
+  void clear_rumble() noexcept override;
   std::optional<GamepadState> poll_gamepad() override;
 
  private:

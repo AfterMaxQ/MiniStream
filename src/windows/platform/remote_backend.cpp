@@ -10,6 +10,7 @@
 #include <Xinput.h>
 
 #include <algorithm>
+#include <chrono>
 #include <utility>
 
 namespace ministream {
@@ -19,6 +20,7 @@ struct WindowsRemoteBackend::Impl {
   std::unique_ptr<D3D11VideoSurface> surface;
   std::unique_ptr<WasapiOutput> audio;
   std::function<void()> surface_notifier;
+  std::optional<SteadyClock::time_point> rumble_deadline;
   bool started{};
 };
 
@@ -34,7 +36,13 @@ RemoteCapabilities WindowsRemoteBackend::inspect() const {
                                          : "Hardware H.264/HEVC decoder unavailable"},
           {audio.ready, audio.detail},
           {true, "Window-local keyboard and mouse"},
-          {network.ready, network.detail}};
+          {network.ready, network.detail},
+          h264,
+          hevc,
+          false,
+          (h264 || hevc) ? 3840U : 0U,
+          (h264 || hevc) ? 2160U : 0U,
+          (h264 || hevc) ? 60U : 0U};
 }
 
 bool WindowsRemoteBackend::start() {
@@ -65,6 +73,7 @@ void WindowsRemoteBackend::stop() noexcept {
   impl_->surface.reset();
   impl_->audio.reset();
   impl_->decoder.reset();
+  clear_rumble();
   impl_->started = false;
 }
 
@@ -95,13 +104,28 @@ bool WindowsRemoteBackend::play_audio(std::span<const float> interleaved_stereo)
 
 void WindowsRemoteBackend::play_rumble(std::uint16_t low, std::uint16_t high,
                                        std::uint32_t duration_ms) {
+  if (duration_ms == 0) {
+    clear_rumble();
+    return;
+  }
   XINPUT_VIBRATION vibration{};
-  vibration.wLeftMotorSpeed = static_cast<WORD>(low >> 8U);
-  vibration.wRightMotorSpeed = static_cast<WORD>(high >> 8U);
+  vibration.wLeftMotorSpeed = static_cast<WORD>(low);
+  vibration.wRightMotorSpeed = static_cast<WORD>(high);
   XInputSetState(0, &vibration);
-  if (duration_ms > 0) {
-    // The input path is intentionally non-blocking.  Windows will clear the
-    // motor on the next feedback packet or when the session stops.
+  impl_->rumble_deadline = SteadyClock::now() + std::chrono::milliseconds{duration_ms};
+}
+
+void WindowsRemoteBackend::clear_rumble() noexcept {
+  XINPUT_VIBRATION vibration{};
+  XInputSetState(0, &vibration);
+  if (impl_) {
+    impl_->rumble_deadline.reset();
+  }
+}
+
+void WindowsRemoteBackend::tick(SteadyClock::time_point now) noexcept {
+  if (impl_ && impl_->rumble_deadline && now >= *impl_->rumble_deadline) {
+    clear_rumble();
   }
 }
 

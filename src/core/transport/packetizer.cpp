@@ -64,12 +64,14 @@ std::array<std::byte, kMediaHeaderBytes> encode_media_header(
 
 }  // namespace
 
-std::vector<Datagram> packetize_video(const EncodedFrame& frame, SessionId session_id) {
-  if (frame.bytes.empty()) {
+std::vector<Datagram> packetize_video(const EncodedFrame& frame, SessionId session_id,
+                                     std::size_t shard_payload_bytes) {
+  if (frame.bytes.empty() || shard_payload_bytes == 0 ||
+      shard_payload_bytes > kVideoShardPayloadBytes) {
     return {};
   }
   const auto shard_count_size =
-      (frame.bytes.size() + kVideoShardPayloadBytes - 1) / kVideoShardPayloadBytes;
+      (frame.bytes.size() + shard_payload_bytes - 1) / shard_payload_bytes;
   if (shard_count_size > kMaxVideoShards) {
     return {};
   }
@@ -78,8 +80,8 @@ std::vector<Datagram> packetize_video(const EncodedFrame& frame, SessionId sessi
   std::vector<Datagram> datagrams;
   datagrams.reserve(shard_count);
   for (std::uint16_t index = 0; index < shard_count; ++index) {
-    const auto offset = static_cast<std::size_t>(index) * kVideoShardPayloadBytes;
-    const auto payload_size = std::min(kVideoShardPayloadBytes, frame.bytes.size() - offset);
+    const auto offset = static_cast<std::size_t>(index) * shard_payload_bytes;
+    const auto payload_size = std::min(shard_payload_bytes, frame.bytes.size() - offset);
     const CommonHeader common{
         PacketType::Video, session_id,
         static_cast<std::uint16_t>(kMediaHeaderBytes + payload_size)};

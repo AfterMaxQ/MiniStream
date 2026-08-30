@@ -23,6 +23,7 @@ class RoleController final : public QObject {
   Q_PROPERTY(bool ready READ ready NOTIFY stateChanged)
   Q_PROPERTY(bool broadcasting READ broadcasting NOTIFY stateChanged)
   Q_PROPERTY(bool searching READ searching NOTIFY stateChanged)
+  Q_PROPERTY(bool connecting READ connecting NOTIFY stateChanged)
   Q_PROPERTY(bool connected READ connected NOTIFY stateChanged)
   Q_PROPERTY(bool pairing READ pairing NOTIFY stateChanged)
   Q_PROPERTY(bool remoteInputActive READ remoteInputActive NOTIFY stateChanged)
@@ -54,6 +55,7 @@ class RoleController final : public QObject {
   [[nodiscard]] bool ready() const noexcept;
   [[nodiscard]] bool broadcasting() const noexcept;
   [[nodiscard]] bool searching() const noexcept;
+  [[nodiscard]] bool connecting() const noexcept;
   [[nodiscard]] bool connected() const noexcept;
   [[nodiscard]] bool pairing() const noexcept;
   [[nodiscard]] bool remoteInputActive() const noexcept;

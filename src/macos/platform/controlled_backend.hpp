@@ -16,6 +16,7 @@ class MacControlledBackend final : public ControlledBackend {
   bool start() override;
   void stop() noexcept override;
   bool configure_video(const CodecConfig& config) override;
+  bool reconfigure_bitrate(std::uint32_t bitrate_bps) override;
   [[nodiscard]] std::optional<EncodedFrame> next_video() override;
   [[nodiscard]] CodecConfig codec_config() const override;
   [[nodiscard]] std::optional<PcmBlock> next_audio() override;

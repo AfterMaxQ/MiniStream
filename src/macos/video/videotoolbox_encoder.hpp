@@ -8,10 +8,11 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 namespace ministream {
 
-enum class VideoEncodeError { Unavailable, InvalidConfig, Initialize, Encode };
+enum class VideoEncodeError { Unavailable, InvalidConfig, Initialize, Encode, Reconfigure };
 
 struct VideoEncodeConfig {
   VideoCodec codec{VideoCodec::H264};
@@ -34,12 +35,19 @@ class VideoToolboxEncoder {
   VideoToolboxEncoder& operator=(const VideoToolboxEncoder&) = delete;
 
   Result<void, VideoEncodeError> start(VideoEncodeConfig config);
+  Result<void, VideoEncodeError> submit(CVPixelBufferRef pixel_buffer,
+                                        std::uint64_t timestamp_us,
+                                        bool force_idr = false);
+  std::optional<EncodedFrame> take_latest();
+  // Kept as a source-compatible convenience for callers that can tolerate a
+  // callback not having produced a frame yet.
   Result<EncodedFrame, VideoEncodeError> encode(CVPixelBufferRef pixel_buffer,
                                                 std::uint64_t timestamp_us,
                                                 bool force_idr = false);
+  Result<void, VideoEncodeError> reconfigure_bitrate(std::uint32_t bitrate_bps);
   void stop() noexcept;
   [[nodiscard]] bool ready() const noexcept;
-  [[nodiscard]] const CodecConfig& codec_config() const noexcept;
+  [[nodiscard]] CodecConfig codec_config() const;
 
  private:
   std::unique_ptr<Impl> impl_;

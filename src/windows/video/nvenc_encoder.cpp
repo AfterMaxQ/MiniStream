@@ -21,6 +21,7 @@ struct NvencEncoder::Impl {
 #if MINISTREAM_HAVE_NVENC_SDK
   HMODULE library{};
   NV_ENCODE_API_FUNCTION_LIST api{};
+  NV_ENC_CONFIG encode_config{};
   void* session{};
   ID3D11Device* device{};
   ID3D11DeviceContext* context{};
@@ -158,6 +159,7 @@ Result<void, NvencError> NvencEncoder::initialize(
     stop();
     return Result<void, NvencError>::err(NvencError::Initialize);
   }
+  impl_->encode_config = encode_config;
   impl_->codec_config = {config.codec, config.width, config.height, config.fps,
                          config.hdr10, {}};
   return Result<void, NvencError>::ok();
@@ -266,10 +268,8 @@ Result<void, NvencError> NvencEncoder::reconfigure_bitrate(std::uint32_t bitrate
 #else
   // Reconfiguration is deliberately synchronous: no frame is in flight when
   // this method returns, so the next packet observes the new rate.
-  NV_ENC_CONFIG config{};
+  NV_ENC_CONFIG config = impl_->encode_config;
   config.version = NV_ENC_CONFIG_VER;
-  config.gopLength = NVENC_INFINITE_GOPLENGTH;
-  config.frameIntervalP = 1;
   config.rcParams.version = NV_ENC_RC_PARAMS_VER;
 #if NVENCAPI_MAJOR_VERSION >= 13
   config.rcParams.rateControlMode = NV_ENC_PARAMS_RC_CBR;
@@ -281,14 +281,28 @@ Result<void, NvencError> NvencEncoder::reconfigure_bitrate(std::uint32_t bitrate
   NV_ENC_RECONFIGURE_PARAMS params{};
   params.version = NV_ENC_RECONFIGURE_PARAMS_VER;
   params.reInitEncodeParams.version = NV_ENC_INITIALIZE_PARAMS_VER;
+  params.reInitEncodeParams.encodeGUID = impl_->config.codec == VideoCodec::H264
+                                             ? NV_ENC_CODEC_H264_GUID
+                                             : NV_ENC_CODEC_HEVC_GUID;
+#if NVENCAPI_MAJOR_VERSION >= 13
+  params.reInitEncodeParams.presetGUID = NV_ENC_PRESET_P4_GUID;
+#else
+  params.reInitEncodeParams.presetGUID = NV_ENC_PRESET_DEFAULT_GUID;
+#endif
   params.reInitEncodeParams.encodeWidth = impl_->config.width;
   params.reInitEncodeParams.encodeHeight = impl_->config.height;
   params.reInitEncodeParams.darWidth = impl_->config.width;
   params.reInitEncodeParams.darHeight = impl_->config.height;
   params.reInitEncodeParams.frameRateNum = impl_->config.fps;
   params.reInitEncodeParams.frameRateDen = 1;
+  params.reInitEncodeParams.enableEncodeAsync = 0;
   params.reInitEncodeParams.enablePTD = 1;
+  params.reInitEncodeParams.maxEncodeWidth = impl_->config.width;
+  params.reInitEncodeParams.maxEncodeHeight = impl_->config.height;
   params.reInitEncodeParams.encodeConfig = &config;
+#if NVENCAPI_MAJOR_VERSION >= 13
+  params.reInitEncodeParams.tuningInfo = NV_ENC_TUNING_INFO_ULTRA_LOW_LATENCY;
+#endif
   const auto status = impl_->api.nvEncReconfigureEncoder(impl_->session, &params);
   if (status != NV_ENC_SUCCESS) {
     return Result<void, NvencError>::err(NvencError::Reconfigure);
@@ -322,6 +336,9 @@ void NvencEncoder::stop() noexcept {
   if (impl_) {
     impl_->codec_config = {};
     impl_->force_idr = false;
+#if MINISTREAM_HAVE_NVENC_SDK
+    impl_->encode_config = {};
+#endif
   }
 }
 

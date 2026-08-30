@@ -2,9 +2,9 @@
 
 #include "core/config/stream_profile.hpp"
 #include "core/net/udp_endpoint.hpp"
-#include "macos/audio/coreaudio_capture.hpp"
+#include "macos/audio/system_audio_capture.hpp"
 #include "macos/input/accessibility_input.hpp"
-#include "macos/video/screencapturekit_capture.hpp"
+#include "macos/video/cgdisplaystream_capture.hpp"
 #include "macos/video/videotoolbox_encoder.hpp"
 
 #include <ApplicationServices/ApplicationServices.h>
@@ -16,12 +16,13 @@
 namespace ministream {
 
 struct MacControlledBackend::Impl {
-  std::unique_ptr<ScreenCaptureKitCapture> capture;
+  std::unique_ptr<CGDisplayStreamCapture> capture;
   std::unique_ptr<VideoToolboxEncoder> encoder;
-  std::unique_ptr<CoreAudioCapture> audio;
+  std::unique_ptr<SystemAudioCapture> audio;
   AccessibilityInput input;
   CodecConfig requested{};
   CodecConfig active{};
+  std::uint32_t bitrate_bps{20'000'000};
   bool configured{};
   bool started{};
 };
@@ -39,24 +40,35 @@ ControlledCapabilities MacControlledBackend::inspect() const {
   const bool h264 = VTIsHardwareEncodeSupported(kCMVideoCodecType_H264);
   const bool hevc = VTIsHardwareEncodeSupported(kCMVideoCodecType_HEVC);
   const bool video_ready = screen_permission && (h264 || hevc);
+  const auto audio = SystemAudioCapture::inspect();
   const auto video_detail = !screen_permission
                                 ? "Screen Recording permission required"
                                 : (video_ready ? "VideoToolbox hardware encoder detected"
                                                : "Hardware H.264/HEVC encoder unavailable");
   return {{video_ready, video_detail},
-          {true, "CoreAudio microphone input"},
+          {audio.ready, audio.detail},
           {trusted, trusted ? "Accessibility input available"
                             : "Accessibility permission required"},
           {network.has_value(), network ? "UDP available" : "UDP socket unavailable"},
-          {false, "SDL gamepad optional"}};
+          {false, "SDL gamepad optional"},
+          h264,
+          hevc,
+          false,
+          video_ready ? std::min<std::uint32_t>(
+                            3840U, static_cast<std::uint32_t>(CGDisplayPixelsWide(CGMainDisplayID())))
+                      : 0U,
+          video_ready ? std::min<std::uint32_t>(
+                            2160U, static_cast<std::uint32_t>(CGDisplayPixelsHigh(CGMainDisplayID())))
+                      : 0U,
+          video_ready ? 60U : 0U};
 }
 
 bool MacControlledBackend::start() {
   if (impl_->started) {
     return true;
   }
-  impl_->capture = std::make_unique<ScreenCaptureKitCapture>();
-  impl_->audio = std::make_unique<CoreAudioCapture>();
+  impl_->capture = std::make_unique<CGDisplayStreamCapture>();
+  impl_->audio = std::make_unique<SystemAudioCapture>();
   impl_->encoder = std::make_unique<VideoToolboxEncoder>();
   if (!impl_->capture->start() || !impl_->audio->start() || !AccessibilityInput::trusted()) {
     stop();
@@ -76,6 +88,7 @@ void MacControlledBackend::stop() noexcept {
   impl_->capture.reset();
   impl_->requested = {};
   impl_->active = {};
+  impl_->bitrate_bps = 20'000'000;
   impl_->configured = false;
   impl_->started = false;
 }
@@ -88,7 +101,25 @@ bool MacControlledBackend::configure_video(const CodecConfig& config) {
   impl_->requested = config;
   impl_->configured = true;
   if (impl_->encoder) impl_->encoder->stop();
+  if (impl_->capture) {
+    impl_->capture->stop();
+    if (!impl_->capture->start(config.width, config.height)) {
+      impl_->configured = false;
+      return false;
+    }
+  }
   impl_->active = {};
+  return true;
+}
+
+bool MacControlledBackend::reconfigure_bitrate(std::uint32_t bitrate_bps) {
+  if (!impl_->started || !impl_->encoder || bitrate_bps == 0) return false;
+  if (!impl_->encoder->ready()) {
+    impl_->bitrate_bps = bitrate_bps;
+    return true;
+  }
+  if (!impl_->encoder->reconfigure_bitrate(bitrate_bps)) return false;
+  impl_->bitrate_bps = bitrate_bps;
   return true;
 }
 
@@ -100,19 +131,21 @@ std::optional<EncodedFrame> MacControlledBackend::next_video() {
     const auto profile = stream_profile(StreamProfileId::Debug1080);
     const auto codec = impl_->configured ? impl_->requested.codec : profile.codec;
     const auto fps = impl_->configured ? impl_->requested.fps : profile.fps;
-    const auto bitrate = impl_->configured
-                             ? std::max<std::uint32_t>(1, impl_->requested.width >= 3'840
-                                                               ? 50'000'000U
-                                                               : 20'000'000U)
+    const auto bitrate = impl_->bitrate_bps != 0
+                             ? impl_->bitrate_bps
                              : static_cast<std::uint32_t>(profile.initial_bitrate_bps);
-    if (!impl_->encoder->start({codec, captured->width, captured->height, fps, bitrate, false})) {
+    const auto width = impl_->configured ? impl_->requested.width : captured->width;
+    const auto height = impl_->configured ? impl_->requested.height : captured->height;
+    if (!impl_->encoder->start({codec, width, height, fps, bitrate, false})) {
       CVPixelBufferRelease(captured->pixel_buffer);
       return std::nullopt;
     }
     impl_->active = impl_->encoder->codec_config();
   }
-  const auto encoded = impl_->encoder->encode(captured->pixel_buffer, captured->timestamp_us);
+  const auto submitted = impl_->encoder->submit(captured->pixel_buffer, captured->timestamp_us);
   CVPixelBufferRelease(captured->pixel_buffer);
+  if (!submitted) return std::nullopt;
+  const auto encoded = impl_->encoder->take_latest();
   if (!encoded) return std::nullopt;
   impl_->active = impl_->encoder->codec_config();
   return *encoded;

@@ -3,6 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
+#include <chrono>
+#include <thread>
+#include <vector>
 
 using namespace ministream;
 
@@ -60,4 +63,38 @@ TEST_CASE("remote runtime starts browsing and stops its backend cleanly") {
   REQUIRE(runtime.state() == RoleState::Idle);
   REQUIRE(backend_ptr->start_calls == 1);
   REQUIRE(backend_ptr->stop_calls == 1);
+}
+
+TEST_CASE("remote discovery starts asynchronously and reports an empty completion") {
+  auto provider = [] {
+    return std::vector<DiscoveryInterface>{{"en0", {192, 168, 1, 20},
+                                            {255, 255, 255, 0}, true, false}};
+  };
+  auto backend = std::make_unique<FakeRemoteBackend>(ready_capabilities());
+  RemoteRuntime runtime(std::move(backend), {}, provider);
+  REQUIRE(runtime.start());
+
+  const auto begin = SteadyClock::now();
+  REQUIRE(runtime.begin_discovery(std::chrono::milliseconds{1}));
+  REQUIRE(runtime.discovery_state() == DiscoveryState::Searching);
+  REQUIRE(SteadyClock::now() - begin < std::chrono::milliseconds{100});
+
+  runtime.tick();
+  std::this_thread::sleep_for(std::chrono::milliseconds{3});
+  runtime.tick();
+  REQUIRE(runtime.discovery_state() == DiscoveryState::Complete);
+  REQUIRE(runtime.hosts().empty());
+  REQUIRE_FALSE(runtime.last_discovery_error().has_value());
+}
+
+TEST_CASE("remote discovery preserves a typed interface failure") {
+  auto provider = [] { return std::vector<DiscoveryInterface>{}; };
+  auto backend = std::make_unique<FakeRemoteBackend>(ready_capabilities());
+  RemoteRuntime runtime(std::move(backend), {}, provider);
+  REQUIRE(runtime.start());
+
+  REQUIRE_FALSE(runtime.begin_discovery(std::chrono::milliseconds{100}));
+  REQUIRE(runtime.discovery_state() == DiscoveryState::Failed);
+  REQUIRE(runtime.last_discovery_error() == DiscoveryError::NoUsableInterface);
+  REQUIRE(runtime.hosts().empty());
 }

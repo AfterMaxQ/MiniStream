@@ -15,7 +15,7 @@
 
 namespace ministream {
 
-enum class CaptureError { Initialize, NoOutput, Timeout, AccessLost, Acquire };
+enum class CaptureError { Initialize, NoOutput, Timeout, AccessLost, Acquire, UnsupportedFormat };
 
 struct CapturedFrame {
   Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
@@ -37,6 +37,9 @@ class DxgiCapture {
 
   Result<void, CaptureError> initialize();
   Result<CapturedFrame, CaptureError> acquire(Microseconds timeout);
+  Result<CapturedFrame, CaptureError> resize(const CapturedFrame& frame,
+                                             std::uint32_t width,
+                                             std::uint32_t height);
 
   // The encoder registers the captured texture on this same device. The
   // returned interfaces are owned by DxgiCapture and remain valid until the

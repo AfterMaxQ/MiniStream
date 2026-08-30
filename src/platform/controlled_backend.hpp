@@ -9,6 +9,7 @@
 #include "core/video/codec_config.hpp"
 #include "platform/capabilities.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 
@@ -27,9 +28,12 @@ class ControlledBackend {
   // may reject a codec or pixel format it cannot provide natively.  The
   // default keeps simple test backends source-compatible.
   virtual bool configure_video(const CodecConfig&) { return true; }
+  // Adaptation is committed only when the backend accepts the new rate.
+  virtual bool reconfigure_bitrate(std::uint32_t) { return false; }
   [[nodiscard]] virtual std::optional<PcmBlock> next_audio() = 0;
   virtual bool inject_input(const DesktopInput& input) = 0;
   virtual bool submit_gamepad(const GamepadState&) { return false; }
+  virtual void clear_gamepad() noexcept {}
   virtual void set_rumble_sender(std::function<void(const RumblePacket&)>) {}
 };
 

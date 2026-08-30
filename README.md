@@ -17,9 +17,9 @@ ControlledRuntime                 RemoteRuntime
      ├─ Windows: DXGI/D3D11/NVENC   ├─ Windows: MF/D3D11
      │  WASAPI loopback/ViGEm        │  WASAPI output
      │                               │
-     └─ macOS: display capture      └─ macOS: VideoToolbox/Metal
-        VideoToolbox/CoreAudio/        CoreAudio/SDL3
-        Accessibility input
+     └─ macOS: CGDisplayStream      └─ macOS: VideoToolbox/Metal
+       VideoToolbox/ScreenCaptureKit  CoreAudio/SDL3
+       Accessibility input
                     │
                     ▼
 MiniStream Core: versioned UDP, pairing, authenticated encryption,
@@ -73,7 +73,11 @@ ctest --test-dir build-ui -C Debug --output-on-failure
 ```
 
 没有 ViGEmBus 时仍可使用键盘和鼠标。需要手柄时安装 ViGEmBus；发布安装
-器会携带官方安装程序并在驱动缺失时通过 Windows UAC 提示安装。
+器会携带官方安装程序并在驱动缺失时通过 Windows UAC 提示安装。安装器还会
+询问是否允许 `ministream.exe` 在 Private Network 接收 UDP；该规则覆盖
+47990 discovery 和动态 session 端口，不会开放 Public Network。拒绝后需在
+Windows Defender Firewall 中为程序允许 Private Network 入站流量，才能发现
+或接受连接。
 
 ### macOS
 
@@ -88,9 +92,10 @@ cmake --build build-macos --config Release
 ctest --test-dir build-macos -C Release --output-on-failure
 ```
 
-首次使用“Allow control”时，macOS 可能要求授予屏幕录制、麦克风和辅助功能
-权限。MiniStream 会在页面显示对应状态，可通过 **Open System Settings**
-打开系统设置。拒绝权限不会启用软件视频回退。
+首次使用“Allow control”时，macOS 可能要求授予本地网络、屏幕录制和辅助功能
+权限。系统音频通过 ScreenCaptureKit 的屏幕录制授权获取，不会把麦克风当作
+游戏音频。MiniStream 会在页面显示对应状态，可通过 **Open System Settings**
+打开系统设置。拒绝权限不会启用软件视频或麦克风回退。
 
 依赖库（Asio、SDL3、Opus、Leopard-RS 等）由 CMake 按
 `cmake/Dependencies.cmake` 中的版本获取；SDK、驱动和构建目录不属于仓库。
@@ -145,4 +150,4 @@ cpack --config build-release/CPackConfig.cmake -C Release
 - macOS 的屏幕录制、辅助功能和音频权限由系统控制；Windows 手柄输入需要
   ViGEmBus，键盘鼠标不依赖该驱动。
 
-发布检查项见 [`docs/release/v0.1-alpha-checklist.md`](docs/release/v0.1-alpha-checklist.md)。
+发布检查项见 [`docs/release/v0.2-functional-reliability-checklist.md`](docs/release/v0.2-functional-reliability-checklist.md)。

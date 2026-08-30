@@ -5,12 +5,12 @@ add_library(
   platform/remote_backend.mm
   input/sdl_gamepad.mm
   input/accessibility_input.mm
-  video/screencapturekit_capture.mm
+  video/cgdisplaystream_capture.mm
   video/videotoolbox_encoder.mm
   video/videotoolbox_decoder.mm
   video/video_surface_bridge.mm
   audio/coreaudio_output.mm
-  audio/coreaudio_capture.mm
+  audio/system_audio_capture.mm
 )
 if(NOT MINISTREAM_BUILD_UI)
   find_package(Qt6 ${MINISTREAM_QT_VERSION} REQUIRED COMPONENTS Core)
@@ -22,6 +22,7 @@ target_link_libraries(
   PRIVATE "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo"
           "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation"
           "-framework CoreGraphics" "-framework ApplicationServices" "-framework IOSurface"
+          "-framework ScreenCaptureKit"
 )
 if(NOT MINISTREAM_BUILD_UI)
   target_link_libraries(ministream_macos_platform PUBLIC Qt6::Core)
@@ -68,6 +69,7 @@ if(MINISTREAM_BUILD_UI)
       MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
       MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
       MACOSX_BUNDLE_ICON_FILE "ministream.icns"
+      MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/packaging/macos/Info.plist.in"
   )
   install(TARGETS ministream BUNDLE DESTINATION . COMPONENT Runtime)
 endif()

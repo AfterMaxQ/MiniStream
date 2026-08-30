@@ -2,6 +2,7 @@
 
 #include "core/audio/audio_packet.hpp"
 #include "core/audio/opus_codec.hpp"
+#include "core/adaptation/rate_controller.hpp"
 #include "core/input/desktop_input.hpp"
 #include "core/input/gamepad_packet.hpp"
 #include "core/media/media_pipeline.hpp"
@@ -12,10 +13,13 @@
 #include "core/session/discovery.hpp"
 #include "core/session/role.hpp"
 #include "core/session/handshake.hpp"
+#include "core/telemetry/feedback_wire.hpp"
+#include "core/telemetry/stream_aggregator.hpp"
 #include "platform/controlled_backend.hpp"
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -27,7 +31,8 @@ namespace ministream {
 class ControlledRuntime {
  public:
   ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
-                    DiscoveryAdvertisement advertisement);
+                    DiscoveryAdvertisement advertisement,
+                    DiscoveryConfig discovery_config = {});
   ~ControlledRuntime();
 
   ControlledRuntime(const ControlledRuntime&) = delete;
@@ -42,6 +47,8 @@ class ControlledRuntime {
   [[nodiscard]] RoleState state() const noexcept;
   [[nodiscard]] const std::string& pairing_code() const noexcept;
   [[nodiscard]] const DiscoveryAdvertisement& advertisement() const noexcept;
+  bool set_advertisement(DiscoveryAdvertisement advertisement);
+  void set_telemetry_callback(std::function<void(const StreamSnapshot&)> callback);
 
   void confirm_pairing();
   void cancel_pairing();
@@ -55,9 +62,13 @@ class ControlledRuntime {
   void send_pending_video(SteadyClock::time_point now);
   void send_rumble(const RumblePacket& packet);
   void send_pending_rumble();
+  void apply_feedback(const FeedbackReport& report);
+  void clear_peer_session() noexcept;
+  void send_pairing_confirmation(bool accepted);
 
   std::unique_ptr<ControlledBackend> backend_;
   DiscoveryAdvertisement advertisement_;
+  DiscoveryConfig discovery_config_;
   RoleState state_{RoleState::Idle};
   std::unique_ptr<DiscoveryHost> discovery_;
   std::unique_ptr<UdpEndpoint> session_;
@@ -72,16 +83,25 @@ class ControlledRuntime {
   GamepadSequenceFilter gamepad_sequence_filter_;
   std::optional<DeviceIdentity> identity_;
   std::optional<EphemeralKeyPair> ephemeral_;
+  std::optional<Hello> peer_hello_;
   std::optional<PairingOffer> peer_offer_;
   std::optional<PairingOffer> local_offer_;
   std::optional<SessionKeys> session_keys_;
   PairingConfirmation confirmation_;
+  PairingMessageRetrier confirmation_retrier_;
   std::string pairing_code_;
   VideoCodec negotiated_codec_{VideoCodec::H264};
   std::uint16_t negotiated_width_{1920};
   std::uint16_t negotiated_height_{1080};
   std::uint16_t negotiated_fps_{60};
   std::uint32_t negotiated_bitrate_{20'000'000};
+  std::optional<CodecConfig> last_codec_config_sent_;
+  std::optional<SteadyClock::time_point> last_codec_config_send_;
+  std::optional<std::uint32_t> last_feedback_sequence_;
+  std::optional<FeedbackReport> last_feedback_report_;
+  std::unique_ptr<RateController> rate_controller_;
+  StreamAggregator telemetry_;
+  std::function<void(const StreamSnapshot&)> telemetry_callback_;
   SessionId session_id_{1};
 };
 

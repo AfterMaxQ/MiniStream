@@ -24,6 +24,8 @@ bool valid_role_transition(RoleState from, RoleState to) noexcept {
       return to == RoleState::Broadcasting;
     case RoleState::Broadcasting:
     case RoleState::RemoteBrowsing:
+      return to == RoleState::RemoteConnecting || to == RoleState::Pairing;
+    case RoleState::RemoteConnecting:
       return to == RoleState::Pairing;
     case RoleState::Pairing:
       return to == RoleState::Streaming;

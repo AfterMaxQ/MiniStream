@@ -22,11 +22,13 @@ class FakeControlledBackend final : public ControlledBackend {
   std::optional<EncodedFrame> next_video() override { return std::nullopt; }
   std::optional<PcmBlock> next_audio() override { return std::nullopt; }
   bool inject_input(const DesktopInput&) override { return true; }
+  void clear_gamepad() noexcept override { ++clear_gamepad_calls; }
 
   ControlledCapabilities capabilities_;
   bool start_result{true};
   unsigned start_calls{};
   unsigned stop_calls{};
+  unsigned clear_gamepad_calls{};
 };
 
 ControlledCapabilities ready_capabilities() {
@@ -77,4 +79,20 @@ TEST_CASE("controlled runtime stops a started backend and withdraws its advertis
   REQUIRE_FALSE(runtime.hosting());
   REQUIRE_FALSE(runtime.advertisement().controllable);
   REQUIRE(backend_ptr->stop_calls == 1);
+}
+
+TEST_CASE("controlled runtime refreshes its advertisement before starting") {
+  auto backend = std::make_unique<FakeControlledBackend>(ready_capabilities());
+  ControlledRuntime runtime(std::move(backend), advertisement());
+
+  auto refreshed = advertisement();
+  refreshed.device_name = "Refreshed device";
+  refreshed.capabilities.hevc = false;
+  REQUIRE(runtime.set_advertisement(refreshed));
+  REQUIRE(runtime.advertisement().device_name == "Refreshed device");
+  REQUIRE_FALSE(runtime.advertisement().controllable);
+
+  REQUIRE(runtime.start());
+  REQUIRE_FALSE(runtime.set_advertisement(advertisement()));
+  runtime.stop();
 }

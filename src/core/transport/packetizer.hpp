@@ -38,7 +38,9 @@ struct VideoShard {
   std::vector<std::byte> payload;
 };
 
-std::vector<Datagram> packetize_video(const EncodedFrame& frame, SessionId session_id);
+std::vector<Datagram> packetize_video(
+    const EncodedFrame& frame, SessionId session_id,
+    std::size_t shard_payload_bytes = kVideoShardPayloadBytes);
 std::optional<VideoShard> parse_video_datagram(const Datagram& datagram);
 
 }  // namespace ministream

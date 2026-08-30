@@ -8,7 +8,9 @@
 #include <mmdeviceapi.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <utility>
 
 namespace ministream {
 namespace {
@@ -16,6 +18,9 @@ namespace {
 using Microsoft::WRL::ComPtr;
 
 CapabilityStatus inspect_nvenc() {
+#if !MINISTREAM_HAVE_NVENC_SDK
+  return {false, "NVENC SDK headers unavailable"};
+#else
   bool nvidia_adapter = false;
   ComPtr<IDXGIFactory1> factory;
   if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
@@ -47,6 +52,7 @@ CapabilityStatus inspect_nvenc() {
   const bool ready = get_version != nullptr && get_version(&version) == 0;
   FreeLibrary(library);
   return {ready, ready ? "NVENC runtime detected" : "NVENC API unavailable"};
+#endif
 }
 
 CapabilityStatus inspect_wasapi() {
@@ -93,10 +99,53 @@ CapabilityStatus inspect_input() {
   return {true, "Keyboard and mouse available"};
 }
 
+std::pair<std::uint32_t, std::uint32_t> inspect_capture_size() {
+  ComPtr<IDXGIFactory1> factory;
+  if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
+    return {0, 0};
+  }
+  ComPtr<IDXGIAdapter1> adapter;
+  if (factory->EnumAdapters1(0, &adapter) != S_OK) {
+    return {0, 0};
+  }
+  ComPtr<IDXGIOutput> output;
+  if (adapter->EnumOutputs(0, &output) != S_OK) {
+    return {0, 0};
+  }
+  DXGI_OUTPUT_DESC description{};
+  if (FAILED(output->GetDesc(&description))) {
+    return {0, 0};
+  }
+  const auto width = static_cast<std::uint32_t>(
+      std::max<LONG>(0, description.DesktopCoordinates.right -
+                            description.DesktopCoordinates.left));
+  const auto height = static_cast<std::uint32_t>(
+      std::max<LONG>(0, description.DesktopCoordinates.bottom -
+                            description.DesktopCoordinates.top));
+  return {std::min(width, 3840U), std::min(height, 2160U)};
+}
+
 }  // namespace
 
 HostCapabilities inspect_host_capabilities() {
-  return {inspect_nvenc(), inspect_wasapi(), inspect_input(), inspect_vigem(), inspect_network()};
+  const auto video = inspect_nvenc();
+  const auto [max_width, max_height] = inspect_capture_size();
+  const auto capture_video = video.ready && max_width != 0 && max_height != 0
+                                 ? video
+                                 : CapabilityStatus{false, video.ready
+                                                               ? "Display capture unavailable"
+                                                               : video.detail};
+  return {capture_video,
+          inspect_wasapi(),
+          inspect_input(),
+          inspect_vigem(),
+          inspect_network(),
+          capture_video.ready,
+          capture_video.ready,
+          false,
+          capture_video.ready ? max_width : 0U,
+          capture_video.ready ? max_height : 0U,
+          capture_video.ready ? 60U : 0U};
 }
 
 }  // namespace ministream

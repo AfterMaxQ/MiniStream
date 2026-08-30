@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/input/gamepad_state.hpp"
+#include "core/time/clock.hpp"
 #include "core/video/codec_config.hpp"
 #include "platform/capabilities.hpp"
 
@@ -24,6 +25,8 @@ class RemoteBackend {
   virtual bool play_audio(std::span<const float> interleaved_stereo) = 0;
   virtual void play_rumble(std::uint16_t low, std::uint16_t high,
                            std::uint32_t duration_ms) = 0;
+  virtual void clear_rumble() noexcept {}
+  virtual void tick(SteadyClock::time_point) noexcept {}
   virtual std::optional<GamepadState> poll_gamepad() { return std::nullopt; }
 };
 

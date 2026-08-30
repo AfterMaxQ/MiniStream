@@ -25,9 +25,16 @@ TEST_CASE("audio jitter buffer returns reordered packet by expected sequence") {
 TEST_CASE("audio jitter buffer requests PLC instead of waiting for a missing packet") {
   AudioJitterBuffer buffer;
   buffer.push(packet(2));
-  const auto missing = buffer.pop(1);
+  auto expected = 1U;
+  const auto missing = buffer.pop(expected);
   REQUIRE(missing.kind == AudioPlayoutKind::Plc);
   REQUIRE_FALSE(missing.packet);
+  ++expected;
+  const auto first_after_loss = buffer.pop(expected);
+  REQUIRE(first_after_loss.kind == AudioPlayoutKind::Packet);
+  REQUIRE(first_after_loss.packet->sequence == expected);
+  ++expected;
+  REQUIRE(buffer.pop(expected).kind == AudioPlayoutKind::Plc);
 }
 
 TEST_CASE("audio jitter buffer never grows beyond twenty milliseconds") {

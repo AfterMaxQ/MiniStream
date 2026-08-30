@@ -46,6 +46,8 @@ class PairingConfirmation {
  public:
   void confirm_local() noexcept { local_ = true; }
   void confirm_peer() noexcept { peer_ = true; }
+  [[nodiscard]] bool local_confirmed() const noexcept { return local_; }
+  [[nodiscard]] bool peer_confirmed() const noexcept { return peer_; }
   [[nodiscard]] bool ready() const noexcept { return local_ && peer_; }
 
  private:

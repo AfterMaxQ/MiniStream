@@ -53,15 +53,20 @@ std::string current_device_name() {
 DiscoveryAdvertisement controlled_advertisement(const ControlledCapabilities& capabilities) {
   const auto profile = stream_profile(StreamProfileId::Debug1080);
   return {current_system(), current_device_name(), 0,
-          DiscoveryCapabilities{capabilities.video.ready,
-                                capabilities.video.ready,
-                                false,
+          DiscoveryCapabilities{capabilities.h264,
+                                capabilities.hevc,
+                                capabilities.hdr10,
                                 capabilities.audio.ready,
                                 capabilities.input.ready,
                                 capabilities.optional_gamepad.ready},
-          static_cast<std::uint16_t>(profile.width),
-          static_cast<std::uint16_t>(profile.height),
-          static_cast<std::uint16_t>(profile.fps),
+          static_cast<std::uint16_t>(capabilities.max_width != 0
+                                         ? capabilities.max_width
+                                         : profile.width),
+          static_cast<std::uint16_t>(capabilities.max_height != 0
+                                         ? capabilities.max_height
+                                         : profile.height),
+          static_cast<std::uint16_t>(capabilities.max_fps != 0 ? capabilities.max_fps
+                                                               : profile.fps),
           false};
 }
 
@@ -196,7 +201,17 @@ bool RoleController::broadcasting() const noexcept {
 
 bool RoleController::searching() const noexcept {
 #if defined(_WIN32) || defined(__APPLE__)
+  return mode_ == RoleMode::Remote && remote_ &&
+         remote_->discovery_state() == DiscoveryState::Searching;
+#else
   return false;
+#endif
+}
+
+bool RoleController::connecting() const noexcept {
+#if defined(_WIN32) || defined(__APPLE__)
+  return mode_ == RoleMode::Remote && remote_ &&
+         remote_->state() == RoleState::RemoteConnecting;
 #else
   return false;
 #endif
@@ -205,11 +220,14 @@ bool RoleController::searching() const noexcept {
 bool RoleController::connected() const noexcept {
 #ifdef _WIN32
   if (mode_ == RoleMode::Controlled) {
-    return controlled_ && (controlled_->pairing() || controlled_->streaming());
+    return controlled_ && controlled_->streaming();
   }
-  return remote_ && remote_->connected();
+  return remote_ && remote_->streaming();
 #elif defined(__APPLE__)
-  return remote_ && remote_->connected();
+  if (mode_ == RoleMode::Controlled) {
+    return controlled_ && controlled_->streaming();
+  }
+  return remote_ && remote_->streaming();
 #else
   return false;
 #endif
@@ -344,11 +362,39 @@ QString RoleController::statusText() const {
   if (!remoteAvailable()) {
     return QStringLiteral("Remote control is not available on this build");
   }
+  if (searching()) {
+    return QStringLiteral("Searching local network");
+  }
+  if (remote_->state() == RoleState::RemoteConnecting) {
+    const auto label = selectedDeviceLabel();
+    return label.isEmpty() ? QStringLiteral("Connecting to device")
+                           : QStringLiteral("Connecting to %1").arg(label);
+  }
   if (pairing()) {
     return QStringLiteral("Confirm the same code on both devices.");
   }
   if (connected()) {
     return QStringLiteral("Connected");
+  }
+  if (remote_->discovery_state() == DiscoveryState::Failed &&
+      remote_->last_discovery_error()) {
+    switch (*remote_->last_discovery_error()) {
+      case DiscoveryError::PermissionDenied:
+        return QStringLiteral(
+            "Local network access is blocked. Allow MiniStream in system settings.");
+      case DiscoveryError::NoUsableInterface:
+        return QStringLiteral("No usable network interface is available.");
+      case DiscoveryError::Bind:
+      case DiscoveryError::Send:
+      case DiscoveryError::Receive:
+        return QStringLiteral("Local network discovery is unavailable. Check firewall settings.");
+    }
+  }
+  if (remote_->discovery_state() == DiscoveryState::Complete && remote_->hosts().empty()) {
+    return QStringLiteral("No devices found on the local network.");
+  }
+  if (remote_->discovery_state() == DiscoveryState::Complete) {
+    return QStringLiteral("Select a device to connect.");
   }
   if (!ready()) {
     return first_failure(remote_capabilities_);
@@ -441,6 +487,9 @@ void RoleController::refreshCapabilities() {
 #if defined(_WIN32) || defined(__APPLE__)
   if (controlled_) {
     controlled_capabilities_ = controlled_->inspect();
+    if (controlled_->state() == RoleState::Idle) {
+      controlled_->set_advertisement(controlled_advertisement(controlled_capabilities_));
+    }
   }
   if (remote_) {
     remote_capabilities_ = remote_->inspect();
@@ -455,14 +504,14 @@ void RoleController::refresh() {
     if (remote_->state() == RoleState::Idle) {
       (void)remote_->start();
     }
-    remote_->refresh(Microseconds{250});
+    (void)remote_->begin_discovery(Microseconds{750});
   }
 #elif defined(__APPLE__)
   if (mode_ == RoleMode::Remote && remote_) {
     if (remote_->state() == RoleState::Idle) {
       (void)remote_->start();
     }
-    (void)remote_->refresh(Microseconds{250});
+    (void)remote_->begin_discovery(Microseconds{750});
   }
 #endif
   failure_text_.clear();
@@ -470,23 +519,12 @@ void RoleController::refresh() {
 }
 
 void RoleController::findDevices() {
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
   if (mode_ == RoleMode::Remote && remote_) {
     if (remote_->state() == RoleState::Idle && !remote_->start()) {
       failure_text_ = QStringLiteral("Remote backend is not ready.");
-    } else if (!remote_->refresh(Microseconds{250})) {
-      failure_text_ = QStringLiteral("No devices found on the local network.");
-    } else {
+    } else if (!remote_->begin_discovery(Microseconds{750}) && !searching()) {
       failure_text_.clear();
-    }
-    emit stateChanged();
-  }
-#elif defined(__APPLE__)
-  if (mode_ == RoleMode::Remote && remote_) {
-    if (remote_->state() == RoleState::Idle && !remote_->start()) {
-      failure_text_ = QStringLiteral("Remote backend is not ready.");
-    } else if (!remote_->refresh(Microseconds{250})) {
-      failure_text_ = QStringLiteral("No devices found on the local network.");
     } else {
       failure_text_.clear();
     }
@@ -675,9 +713,24 @@ void RoleController::openPermissionSettings() {
 void RoleController::tick() {
 #if defined(_WIN32) || defined(__APPLE__)
   if (controlled_ && mode_ == RoleMode::Controlled) {
+    const auto before_state = controlled_->state();
     controlled_->tick();
+    const auto after_state = controlled_->state();
+    if (before_state != after_state) {
+      emit stateChanged();
+    }
   } else if (remote_ && mode_ == RoleMode::Remote) {
+    const auto before_state = remote_->state();
+    const auto before_discovery = remote_->discovery_state();
+    const auto before_hosts = remote_->hosts().size();
+    const auto before_pairing_code = remote_->pairing_code();
     remote_->tick();
+    const auto after_state = remote_->state();
+    if (before_state != after_state || before_discovery != remote_->discovery_state() ||
+        before_hosts != remote_->hosts().size() ||
+        before_pairing_code != remote_->pairing_code()) {
+      emit stateChanged();
+    }
   }
 #endif
 }

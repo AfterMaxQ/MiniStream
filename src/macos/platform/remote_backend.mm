@@ -41,7 +41,13 @@ RemoteCapabilities MacRemoteBackend::inspect() const {
                                     : "Hardware H.264/HEVC decoder unavailable"},
           {true, "CoreAudio output"},
           {true, "Window-local keyboard and mouse"},
-          {network.has_value(), network ? "UDP available" : "UDP socket unavailable"}};
+          {network.has_value(), network ? "UDP available" : "UDP socket unavailable"},
+          h264,
+          hevc,
+          false,
+          video_ready ? 3840U : 0U,
+          video_ready ? 2160U : 0U,
+          video_ready ? 60U : 0U};
 }
 
 bool MacRemoteBackend::start() {
@@ -97,6 +103,12 @@ void MacRemoteBackend::play_rumble(std::uint16_t low, std::uint16_t high,
                                    std::uint32_t duration_ms) {
   if (impl_->gamepad) {
     impl_->gamepad->rumble(low, high, Microseconds{static_cast<std::int64_t>(duration_ms) * 1000});
+  }
+}
+
+void MacRemoteBackend::clear_rumble() noexcept {
+  if (impl_ && impl_->gamepad) {
+    (void)impl_->gamepad->rumble(0, 0, Microseconds{0});
   }
 }
 
