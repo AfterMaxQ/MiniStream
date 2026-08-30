@@ -2,13 +2,18 @@ add_library(
   ministream_windows_platform
   STATIC
   platform/controlled_backend.cpp
+  platform/remote_backend.cpp
   platform/host_capabilities.cpp
   video/dxgi_capture.cpp
   video/nvenc_encoder.cpp
+  video/mf_decoder.cpp
+  video/d3d11_video_surface.cpp
   audio/wasapi_loopback.cpp
+  audio/wasapi_output.cpp
   input/virtual_gamepad.cpp
   input/vigem_gamepad.cpp
   input/remote_input_sink.cpp
+  input/window_input_source.cpp
 )
 target_include_directories(ministream_windows_platform PUBLIC "${PROJECT_SOURCE_DIR}/src")
 if(MINISTREAM_HAVE_NVENC_SDK)
@@ -21,7 +26,8 @@ endif()
 target_link_libraries(
   ministream_windows_platform
   PUBLIC MiniStream::Core
-  PRIVATE d3d11 dxgi ole32 advapi32 user32 ministream_vigemclient
+  PRIVATE d3d11 dxgi dxguid ole32 advapi32 user32 mfplat mfreadwrite mfuuid xinput9_1_0
+          ministream_vigemclient
 )
 ministream_set_warnings(ministream_windows_platform)
 
@@ -32,10 +38,6 @@ if(MINISTREAM_BUILD_UI)
     "${PROJECT_SOURCE_DIR}/src/app/qt_main.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.hpp"
-    platform/controlled_backend.cpp
-    platform/controlled_backend.hpp
-    ui/host_controller.cpp
-    ui/host_controller.hpp
   )
   target_link_libraries(
     ministream

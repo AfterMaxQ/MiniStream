@@ -1,21 +1,22 @@
 #pragma once
 
 #include "core/session/role.hpp"
+#include "platform/capabilities.hpp"
 
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 
 #include <memory>
 
 namespace ministream {
 
-#ifdef _WIN32
-class HostController;
-#endif
 #ifdef __APPLE__
 class ClientController;
 #endif
+class ControlledRuntime;
+class RemoteRuntime;
 
 class RoleController final : public QObject {
   Q_OBJECT
@@ -88,11 +89,18 @@ class RoleController final : public QObject {
   void stateChanged();
 
  private:
+  void tick();
   void cleanupCurrentMode();
+  void refreshCapabilities();
 
   RoleMode mode_{RoleMode::Remote};
+  ControlledCapabilities controlled_capabilities_;
+  RemoteCapabilities remote_capabilities_;
+  QString failure_text_;
+  QTimer tick_timer_;
 #ifdef _WIN32
-  std::unique_ptr<HostController> host_;
+  std::unique_ptr<ControlledRuntime> controlled_;
+  std::unique_ptr<RemoteRuntime> remote_;
 #endif
 #ifdef __APPLE__
   std::unique_ptr<ClientController> client_;
