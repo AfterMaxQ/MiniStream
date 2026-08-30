@@ -101,11 +101,12 @@ The shared runtime interfaces are small and synchronous at their boundaries:
 class ControlledBackend {
  public:
   virtual ~ControlledBackend() = default;
-  virtual CapabilityReport inspect() const = 0;
-  virtual bool start(MediaSink& sink, InputSink& input) = 0;
+  virtual ControlledCapabilities inspect() const = 0;
+  virtual bool start() = 0;
   virtual void stop() noexcept = 0;
-  virtual std::optional<CapturedFrame> capture() = 0;
-  virtual std::optional<CapturedAudio> read_audio() = 0;
+  virtual std::optional<EncodedFrame> next_video() = 0;
+  virtual std::optional<PcmBlock> next_audio() = 0;
+  virtual bool inject_input(const DesktopInput&) = 0;
 };
 
 class RemoteBackend {
@@ -114,8 +115,8 @@ class RemoteBackend {
   virtual bool start() = 0;
   virtual void stop() noexcept = 0;
   virtual bool configure_video(const CodecConfig&) = 0;
-  virtual bool submit_video(std::span<const std::byte>, std::uint64_t) = 0;
-  virtual bool submit_audio(std::span<const float>) = 0;
+  virtual bool decode_video(std::span<const std::byte>, std::uint64_t) = 0;
+  virtual bool play_audio(std::span<const float>) = 0;
 };
 ```
 

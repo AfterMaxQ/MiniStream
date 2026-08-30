@@ -154,7 +154,7 @@ git push origin feat/ministream-v0.1
 - Modify: tests/CMakeLists.txt
 
 **Interfaces:**
-- class RemoteBackend { virtual PlatformCapability inspect() const = 0; virtual bool start() = 0; virtual void stop() noexcept = 0; virtual bool configure_video(const CodecConfig&) = 0; virtual bool submit_video(std::span<const std::byte>, uint64_t) = 0; virtual bool submit_audio(std::span<const float>) = 0; virtual ~RemoteBackend() = default; };
+- class RemoteBackend { virtual PlatformCapability inspect() const = 0; virtual bool start() = 0; virtual void stop() noexcept = 0; virtual bool configure_video(const CodecConfig&) = 0; virtual bool decode_video(std::span<const std::byte>, uint64_t) = 0; virtual bool play_audio(std::span<const float>) = 0; virtual ~RemoteBackend() = default; };
 - class RemoteRuntime exposes refresh(), hosts(), connect(index), confirm_pairing(), cancel_pairing(), toggle_input(), release_input(), connected(), pairing(), streaming(), selected_host(), and tick().
 - format_discovered_host(const DiscoveredHost&) remains the only formatter used by QML.
 
@@ -173,7 +173,7 @@ Expected: compilation failure because the runtime and fake boundaries are not pr
 
 - [ ] Step 3: Implement the runtime.
 
-Move common portions of the current macOS client controller into RemoteRuntime: discover and retain full advertisements, bind the selected address, send the role-bound Hello, validate the controlled Accept, run numeric pairing confirmation, create MediaReceiver, and pass decoded codec, video, audio, and feedback data to RemoteBackend. Keep latest-frame ownership and jitter/drift limits unchanged. release_input() calls both RemoteInputRouter::end() and InputCapture::leave_remote().
+Move common portions of the current macOS client controller into RemoteRuntime: discover and retain full advertisements, bind the selected address, send the role-bound Hello, validate the controlled Accept, run numeric pairing confirmation, create MediaReceiver, and pass encoded video to RemoteBackend::decode_video and decoded PCM to RemoteBackend::play_audio. Keep latest-frame ownership and jitter/drift limits unchanged. release_input() calls both RemoteInputRouter::end() and InputCapture::leave_remote().
 
 - [ ] Step 4: Run focused tests and commit.
 
@@ -452,4 +452,3 @@ git push origin feat/ministream-v0.1
 ## Handoff
 
 Plan complete and saved to docs/superpowers/plans/2026-08-30-unified-role-shell.md. Execute it inline with checkpoints after each task; do not use subagents. Windows verification is performed in this checkout. macOS compilation, permissions, DMG, and hardware acceptance are performed on a Mac before claiming cross-platform release acceptance.
-
