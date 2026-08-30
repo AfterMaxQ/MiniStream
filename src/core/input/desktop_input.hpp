@@ -15,6 +15,7 @@ enum class DesktopInputKind : std::uint8_t {
   MouseMove = 2,
   MouseButton = 3,
   MouseWheel = 4,
+  ReleaseAll = 5,
 };
 
 // Mouse buttons use the same small wire representation on every platform.

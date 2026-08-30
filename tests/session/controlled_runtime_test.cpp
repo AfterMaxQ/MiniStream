@@ -22,12 +22,14 @@ class FakeControlledBackend final : public ControlledBackend {
   std::optional<EncodedFrame> next_video() override { return std::nullopt; }
   std::optional<PcmBlock> next_audio() override { return std::nullopt; }
   bool inject_input(const DesktopInput&) override { return true; }
+  void clear_input() noexcept override { ++clear_input_calls; }
   void clear_gamepad() noexcept override { ++clear_gamepad_calls; }
 
   ControlledCapabilities capabilities_;
   bool start_result{true};
   unsigned start_calls{};
   unsigned stop_calls{};
+  unsigned clear_input_calls{};
   unsigned clear_gamepad_calls{};
 };
 
@@ -79,6 +81,7 @@ TEST_CASE("controlled runtime stops a started backend and withdraws its advertis
   REQUIRE_FALSE(runtime.hosting());
   REQUIRE_FALSE(runtime.advertisement().controllable);
   REQUIRE(backend_ptr->stop_calls == 1);
+  REQUIRE(backend_ptr->clear_input_calls == 1);
 }
 
 TEST_CASE("controlled runtime refreshes its advertisement before starting") {

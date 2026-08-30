@@ -13,7 +13,7 @@ namespace ministream {
 // to the local device.
 class RemoteInputRouter {
  public:
-  using Sender = std::function<void(const DesktopInput&)>;
+  using Sender = std::function<bool(const DesktopInput&)>;
 
   explicit RemoteInputRouter(InputCapture& capture, Sender sender);
   bool begin();

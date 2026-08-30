@@ -80,6 +80,7 @@ bool MacControlledBackend::start() {
 
 void MacControlledBackend::stop() noexcept {
   if (!impl_) return;
+  impl_->input.clear();
   if (impl_->encoder) impl_->encoder->stop();
   if (impl_->audio) impl_->audio->stop();
   if (impl_->capture) impl_->capture->stop();
@@ -169,6 +170,12 @@ std::optional<PcmBlock> MacControlledBackend::next_audio() {
 
 bool MacControlledBackend::inject_input(const DesktopInput& input) {
   return impl_->started && impl_->input.inject(input);
+}
+
+void MacControlledBackend::clear_input() noexcept {
+  if (impl_) {
+    impl_->input.clear();
+  }
 }
 
 }  // namespace ministream

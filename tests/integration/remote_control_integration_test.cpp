@@ -105,10 +105,15 @@ class LoopbackControlledBackend final : public ControlledBackend {
   }
 
   bool inject_input(const DesktopInput& input) override {
+    ++input_injection_attempts;
+    if (reject_first_input && input_injection_attempts == 1U) {
+      return false;
+    }
     injected_inputs.push_back(input);
     return true;
   }
 
+  void clear_input() noexcept override { ++clear_input_calls; }
   void clear_gamepad() noexcept override { ++clear_gamepad_calls; }
 
   bool started{};
@@ -117,6 +122,9 @@ class LoopbackControlledBackend final : public ControlledBackend {
   std::uint32_t bitrate{};
   std::optional<CodecConfig> configured;
   std::vector<DesktopInput> injected_inputs;
+  bool reject_first_input{};
+  unsigned input_injection_attempts{};
+  unsigned clear_input_calls{};
   unsigned clear_gamepad_calls{};
 };
 
@@ -244,15 +252,27 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
 
   remote.toggle_input();
   REQUIRE(remote.remote_input_active());
+  controlled_backend_ptr->reject_first_input = true;
   const DesktopInput key_down{DesktopInputKind::Key, 0, 0, 0,
                               static_cast<std::uint16_t>(DesktopKey::W)};
   REQUIRE(remote.route_input(key_down));
-  for (unsigned attempt = 0; attempt < 100U && controlled_backend_ptr->injected_inputs.empty();
+  for (unsigned attempt = 0; attempt < 200U && controlled_backend_ptr->injected_inputs.empty();
        ++attempt) {
     pump(controlled, remote);
   }
   REQUIRE(controlled_backend_ptr->injected_inputs.size() == 1);
   REQUIRE(controlled_backend_ptr->injected_inputs.front() == key_down);
+  REQUIRE(controlled_backend_ptr->input_injection_attempts >= 2U);
+
+  const auto clear_input_before_release = controlled_backend_ptr->clear_input_calls;
+  remote.release_input();
+  for (unsigned attempt = 0;
+       attempt < 200U && controlled_backend_ptr->clear_input_calls == clear_input_before_release;
+       ++attempt) {
+    pump(controlled, remote);
+  }
+  REQUIRE_FALSE(remote.remote_input_active());
+  REQUIRE(controlled_backend_ptr->clear_input_calls == clear_input_before_release + 1U);
 
   for (unsigned attempt = 0; attempt < 800U &&
                                 (remote_backend_ptr->decoded_video.empty() ||
@@ -274,11 +294,13 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
 
   const auto rumble_clear_before_stop = remote_backend_ptr->rumble_clear_calls;
   const auto gamepad_clear_before_stop = controlled_backend_ptr->clear_gamepad_calls;
+  const auto input_clear_before_stop = controlled_backend_ptr->clear_input_calls;
   remote.stop();
   REQUIRE(remote_backend_ptr->rumble_clear_calls == rumble_clear_before_stop + 1);
   pump(controlled, remote, 2);
   REQUIRE(controlled.state() == RoleState::Broadcasting);
   REQUIRE(controlled.advertisement().controllable);
+  REQUIRE(controlled_backend_ptr->clear_input_calls == input_clear_before_stop + 1);
   REQUIRE(controlled_backend_ptr->clear_gamepad_calls == gamepad_clear_before_stop + 1);
 
   REQUIRE(remote.start());

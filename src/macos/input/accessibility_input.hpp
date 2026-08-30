@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <set>
 
 namespace ministream {
 
@@ -18,7 +19,12 @@ class AccessibilityInput {
                                                  bool pressed) noexcept;
   static std::optional<DesktopInput> mouse_button_from_qt(std::uint32_t qt_button,
                                                           bool pressed) noexcept;
-  Result<void, AccessibilityInputError> inject(const DesktopInput& input) const;
+  Result<void, AccessibilityInputError> inject(const DesktopInput& input);
+  void clear() noexcept;
+
+ private:
+  std::set<DesktopKey> pressed_keys_;
+  std::set<DesktopMouseButton> pressed_buttons_;
 };
 
 }  // namespace ministream

@@ -7,7 +7,10 @@ using namespace ministream;
 TEST_CASE("remote input router forwards escape while remote mode is active") {
   InputCapture capture;
   std::size_t sent = 0;
-  RemoteInputRouter router{capture, [&](const DesktopInput&) { ++sent; }};
+  RemoteInputRouter router{capture, [&](const DesktopInput&) {
+                             ++sent;
+                             return true;
+                           }};
   REQUIRE(router.begin());
   REQUIRE(router.active());
   REQUIRE(router.route({DesktopInputKind::MouseMove, 0, 1, 2, 0}));
@@ -21,4 +24,11 @@ TEST_CASE("remote input router forwards escape while remote mode is active") {
   REQUIRE_FALSE(capture.captured(InputDevice::Keyboard));
   REQUIRE_FALSE(capture.captured(InputDevice::Mouse));
   REQUIRE_FALSE(capture.captured(InputDevice::Gamepad));
+}
+
+TEST_CASE("remote input router reports a rejected send") {
+  InputCapture capture;
+  RemoteInputRouter router{capture, [](const DesktopInput&) { return false; }};
+  REQUIRE(router.begin());
+  REQUIRE_FALSE(router.route({DesktopInputKind::MouseMove, 0, 1, 2, 0}));
 }

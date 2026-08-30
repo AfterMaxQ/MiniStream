@@ -28,7 +28,7 @@ RemoteRuntime::RemoteRuntime(std::unique_ptr<RemoteBackend> backend,
       discovery_config_(std::move(discovery_config)),
       interface_provider_(std::move(interface_provider)) {
   input_router_ = std::make_unique<RemoteInputRouter>(
-      input_capture_, [this](const DesktopInput& input) { send_input(input); });
+      input_capture_, [this](const DesktopInput& input) { return send_input(input); });
 }
 
 RemoteRuntime::~RemoteRuntime() { stop(); }
@@ -230,7 +230,11 @@ void RemoteRuntime::toggle_input() {
   }
 }
 
-void RemoteRuntime::release_input() noexcept {
+void RemoteRuntime::release_input() {
+  const bool notify_peer = remote_input_active() && streaming();
+  if (notify_peer) {
+    (void)send_input({DesktopInputKind::ReleaseAll, 0, 0, 0, 0});
+  }
   if (input_router_) {
     input_router_->end();
   } else {
@@ -242,17 +246,43 @@ bool RemoteRuntime::route_input(const DesktopInput& input) {
   return input_router_ && input_router_->route(input);
 }
 
-void RemoteRuntime::send_input(const DesktopInput& input) {
+bool RemoteRuntime::send_input(const DesktopInput& input) {
   if (!session_ || !crypto_) {
-    return;
+    return false;
   }
   const auto payload = encode_desktop_input(input);
   if (payload.empty()) {
-    return;
+    return false;
+  }
+  if (is_reliable_desktop_input(input)) {
+    const auto sequence = reliable_input_.send(
+        {0, ControlKind::Input, payload}, SteadyClock::now());
+    if (!sequence) {
+      disconnect_session();
+      return false;
+    }
+    return send_reliable_input({*sequence, ControlKind::Input, payload});
   }
   if (const auto packet = crypto_->seal(PacketType::Input, payload); packet) {
-    session_->send(packet->bytes);
+    return static_cast<bool>(session_->send(packet->bytes));
   }
+  return false;
+}
+
+bool RemoteRuntime::send_reliable_input(const ControlMessage& message) {
+  if (!session_ || !crypto_ || message.kind != ControlKind::Input) {
+    return false;
+  }
+  const auto input = decode_desktop_input(message.payload);
+  if (!input) {
+    return false;
+  }
+  const auto payload = encode_reliable_desktop_input({message.sequence, *input});
+  if (payload.empty()) {
+    return false;
+  }
+  const auto sealed = crypto_->seal(PacketType::Input, payload);
+  return sealed && static_cast<bool>(session_->send(sealed->bytes));
 }
 
 void RemoteRuntime::send_gamepad(const GamepadPacket& packet) {
@@ -280,6 +310,8 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
     if (const auto payload = crypto_->open(incoming.datagram); payload) {
       if (is_disconnect_control(*payload)) {
         disconnect_session();
+      } else if (const auto sequence = decode_input_ack_control(*payload); sequence) {
+        reliable_input_.acknowledge(*sequence);
       } else if (const auto config = decode_codec_config(*payload); config) {
         codec_configured_ = false;
         codec_configured_ = backend_->configure_video(*config);
@@ -457,6 +489,15 @@ void RemoteRuntime::tick() {
     }
   }
   if (streaming()) {
+    for (const auto& message : reliable_input_.due_retries(now)) {
+      (void)send_reliable_input(message);
+    }
+    if (!reliable_input_.take_failures().empty()) {
+      disconnect_session();
+      return;
+    }
+  }
+  if (streaming()) {
     play_audio(now);
   }
   if (streaming() && input_capture_.routes_to_remote(InputDevice::Gamepad) && backend_) {
@@ -579,7 +620,11 @@ void RemoteRuntime::disconnect_session() noexcept {
       session_->send(sealed->bytes);
     }
   }
-  release_input();
+  if (input_router_) {
+    input_router_->end();
+  } else {
+    input_capture_.leave_remote();
+  }
   media_receiver_.reset();
   crypto_.reset();
   audio_decoder_.reset();
@@ -589,6 +634,7 @@ void RemoteRuntime::disconnect_session() noexcept {
   next_audio_playout_.reset();
   audio_jitter_ = AudioJitterBuffer{};
   gamepad_coalescer_ = InputCoalescer{};
+  reliable_input_ = ReliableControl{};
   session_keys_.reset();
   selected_min_bitrate_bps_ = 0;
   selected_max_bitrate_bps_ = 0;

@@ -5,6 +5,7 @@
 #include "core/adaptation/rate_controller.hpp"
 #include "core/input/desktop_input.hpp"
 #include "core/input/gamepad_packet.hpp"
+#include "core/input/reliable_desktop_input.hpp"
 #include "core/media/media_pipeline.hpp"
 #include "core/net/udp_endpoint.hpp"
 #include "core/security/identity.hpp"
@@ -65,6 +66,7 @@ class ControlledRuntime {
   void apply_feedback(const FeedbackReport& report);
   void clear_peer_session() noexcept;
   void send_pairing_confirmation(bool accepted);
+  void send_input_ack(ControlSeq sequence);
 
   std::unique_ptr<ControlledBackend> backend_;
   DiscoveryAdvertisement advertisement_;
@@ -81,6 +83,7 @@ class ControlledRuntime {
   std::deque<RumblePacket> rumble_pending_;
   std::uint32_t audio_sequence_{};
   GamepadSequenceFilter gamepad_sequence_filter_;
+  ReliableDesktopInputReceiver reliable_input_receiver_;
   std::optional<DeviceIdentity> identity_;
   std::optional<EphemeralKeyPair> ephemeral_;
   std::optional<Hello> peer_hello_;

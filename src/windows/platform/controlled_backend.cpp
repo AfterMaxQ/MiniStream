@@ -84,6 +84,9 @@ void WindowsControlledBackend::stop() noexcept {
   if (impl_->gamepad) {
     impl_->gamepad->stop();
   }
+  if (impl_->input) {
+    impl_->input->clear();
+  }
   if (impl_->encoder) {
     impl_->encoder->stop();
   }
@@ -200,6 +203,12 @@ std::optional<PcmBlock> WindowsControlledBackend::next_audio() {
 
 bool WindowsControlledBackend::inject_input(const DesktopInput& input) {
   return impl_->started && impl_->input && impl_->input->inject(input);
+}
+
+void WindowsControlledBackend::clear_input() noexcept {
+  if (impl_->input) {
+    impl_->input->clear();
+  }
 }
 
 bool WindowsControlledBackend::submit_gamepad(const GamepadState& state) {

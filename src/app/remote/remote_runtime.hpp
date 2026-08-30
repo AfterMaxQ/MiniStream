@@ -9,6 +9,7 @@
 #include "core/input/input_coalescer.hpp"
 #include "core/input/input_capture.hpp"
 #include "core/input/remote_input_router.hpp"
+#include "core/input/reliable_desktop_input.hpp"
 #include "core/media/media_pipeline.hpp"
 #include "core/net/udp_endpoint.hpp"
 #include "core/security/identity.hpp"
@@ -19,6 +20,7 @@
 #include "core/session/role.hpp"
 #include "core/telemetry/feedback_wire.hpp"
 #include "core/telemetry/stream_aggregator.hpp"
+#include "core/transport/reliable_control.hpp"
 #include "platform/remote_backend.hpp"
 
 #include <cstddef>
@@ -62,7 +64,7 @@ class RemoteRuntime {
   void confirm_pairing();
   void cancel_pairing();
   void toggle_input();
-  void release_input() noexcept;
+  void release_input();
   bool route_input(const DesktopInput& input);
   void tick();
 
@@ -72,7 +74,8 @@ class RemoteRuntime {
   void process_datagram(const ReceivedDatagram& incoming);
   void poll_media(const ReceivedDatagram& incoming);
   void play_audio(SteadyClock::time_point now);
-  void send_input(const DesktopInput& input);
+  bool send_input(const DesktopInput& input);
+  bool send_reliable_input(const ControlMessage& message);
   void send_gamepad(const GamepadPacket& packet);
   void send_pairing_offer(SteadyClock::time_point now);
   void send_pairing_confirmation(bool accepted);
@@ -111,6 +114,7 @@ class RemoteRuntime {
   InputCapture input_capture_;
   std::unique_ptr<RemoteInputRouter> input_router_;
   InputCoalescer gamepad_coalescer_;
+  ReliableControl reliable_input_;
   SessionId session_id_{1};
   bool codec_configured_{};
   std::optional<SteadyClock::time_point> last_keyframe_request_;

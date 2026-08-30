@@ -29,7 +29,17 @@ ControlledRuntime::ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
                                      DiscoveryConfig discovery_config)
     : backend_(std::move(backend)),
       advertisement_(std::move(advertisement)),
-      discovery_config_(std::move(discovery_config)) {
+      discovery_config_(std::move(discovery_config)),
+      reliable_input_receiver_([this](const DesktopInput& input) {
+        if (!backend_) {
+          return false;
+        }
+        if (input.kind == DesktopInputKind::ReleaseAll) {
+          backend_->clear_input();
+          return true;
+        }
+        return backend_->inject_input(input);
+      }) {
   advertisement_.controllable = false;
 }
 
@@ -79,6 +89,8 @@ void ControlledRuntime::stop() noexcept {
     }
   }
   if (backend_) {
+    backend_->clear_input();
+    backend_->clear_gamepad();
     backend_->stop();
   }
   scheduler_.reset();
@@ -95,6 +107,7 @@ void ControlledRuntime::stop() noexcept {
   }
   audio_sequence_ = 0;
   gamepad_sequence_filter_ = GamepadSequenceFilter{};
+  reliable_input_receiver_.reset();
   discovery_.reset();
   session_.reset();
   identity_.reset();
@@ -218,11 +231,18 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
     if (const auto common = decode_common_header(bytes.first<kCommonHeaderBytes>());
         common && common->type == PacketType::Input && crypto_) {
       if (const auto payload = crypto_->open(incoming.datagram); payload) {
-        if (const auto input = decode_desktop_input(*payload); input && backend_) {
-          backend_->inject_input(*input);
+        if (const auto reliable = decode_reliable_desktop_input(*payload); reliable) {
+          for (const auto sequence : reliable_input_receiver_.receive(*reliable)) {
+            send_input_ack(sequence);
+          }
+        } else if (const auto input = decode_desktop_input(*payload);
+                   input && backend_ &&
+                   (input->kind == DesktopInputKind::MouseMove ||
+                    input->kind == DesktopInputKind::MouseWheel)) {
+          (void)backend_->inject_input(*input);
         } else if (const auto gamepad = decode_gamepad_packet(*payload); gamepad && backend_ &&
                    gamepad_sequence_filter_.accept(gamepad->sequence)) {
-          backend_->submit_gamepad(gamepad->state);
+          (void)backend_->submit_gamepad(gamepad->state);
         }
       }
       return;
@@ -528,8 +548,19 @@ void ControlledRuntime::send_pairing_confirmation(bool accepted) {
   }
 }
 
+void ControlledRuntime::send_input_ack(ControlSeq sequence) {
+  if (!session_ || !crypto_) {
+    return;
+  }
+  const auto payload = encode_input_ack_control(sequence);
+  if (const auto sealed = crypto_->seal(PacketType::Control, payload); sealed) {
+    (void)session_->reply(sealed->bytes);
+  }
+}
+
 void ControlledRuntime::clear_peer_session() noexcept {
   if (backend_) {
+    backend_->clear_input();
     backend_->clear_gamepad();
   }
   scheduler_.reset();
@@ -546,6 +577,7 @@ void ControlledRuntime::clear_peer_session() noexcept {
   }
   audio_sequence_ = 0;
   gamepad_sequence_filter_ = GamepadSequenceFilter{};
+  reliable_input_receiver_.reset();
   session_keys_.reset();
   peer_hello_.reset();
   ephemeral_.reset();

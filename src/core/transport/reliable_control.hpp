@@ -18,6 +18,7 @@ enum class ControlKind : std::uint8_t {
   CodecConfig,
   BitrateUpdate,
   Ack,
+  Input,
 };
 
 struct ControlMessage {

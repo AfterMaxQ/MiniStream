@@ -30,6 +30,7 @@ add_executable(
   input/gamepad_packet_test.cpp
   input/desktop_key_test.cpp
   input/desktop_input_test.cpp
+  input/reliable_desktop_input_test.cpp
   input/remote_input_router_test.cpp
   input/input_coalescer_test.cpp
   input/input_capture_test.cpp

@@ -22,6 +22,7 @@ class MacControlledBackend final : public ControlledBackend {
   [[nodiscard]] CodecConfig codec_config() const override;
   [[nodiscard]] std::optional<PcmBlock> next_audio() override;
   bool inject_input(const DesktopInput& input) override;
+  void clear_input() noexcept override;
 
  private:
   struct Impl;

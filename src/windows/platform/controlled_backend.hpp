@@ -30,6 +30,7 @@ class WindowsControlledBackend final : public ControlledBackend {
   [[nodiscard]] CodecConfig codec_config() const override;
   [[nodiscard]] std::optional<PcmBlock> next_audio() override;
   bool inject_input(const DesktopInput& input) override;
+  void clear_input() noexcept override;
   bool submit_gamepad(const GamepadState& state) override;
   void clear_gamepad() noexcept override;
   void set_rumble_sender(std::function<void(const RumblePacket&)> sender) override;

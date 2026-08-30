@@ -43,8 +43,7 @@ bool RemoteInputRouter::route(const DesktopInput& input) {
   }
   // The UI owns the local shortcuts only while remote input is inactive. In
   // remote mode Esc/F11 are ordinary game input and must be forwarded.
-  sender_(input);
-  return true;
+  return sender_(input);
 }
 
 }  // namespace ministream

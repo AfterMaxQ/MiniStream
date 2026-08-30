@@ -24,6 +24,7 @@ add_library(
   input/gamepad_packet.cpp
   input/desktop_key.cpp
   input/desktop_input.cpp
+  input/reliable_desktop_input.cpp
   input/remote_input_router.cpp
   input/input_coalescer.cpp
   input/input_capture.cpp

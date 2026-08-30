@@ -28,3 +28,12 @@ TEST_CASE("desktop key input accepts neutral usages and rejects native key codes
   const DesktopInput windows_vk{DesktopInputKind::Key, 0, 0, 0, 87};
   REQUIRE(encode_desktop_input(windows_vk).empty());
 }
+
+TEST_CASE("desktop ReleaseAll is an explicit empty ownership event") {
+  const DesktopInput release_all{DesktopInputKind::ReleaseAll, 0, 0, 0, 0};
+  REQUIRE(decode_desktop_input(encode_desktop_input(release_all)) == release_all);
+
+  auto malformed = release_all;
+  malformed.data = 1;
+  REQUIRE(encode_desktop_input(malformed).empty());
+}
