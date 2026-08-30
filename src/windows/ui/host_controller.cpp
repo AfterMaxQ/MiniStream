@@ -244,7 +244,7 @@ void HostController::pollNetwork() {
       negotiated_fps_ = hello->fps;
       negotiated_bitrate_ = hello->target_bitrate_bps;
       session_->reply(encode_accept(
-          {1, hello->codec, hello->width, hello->height, hello->fps,
+          {HandshakeRole::Controlled, 1, hello->codec, hello->width, hello->height, hello->fps,
            hello->target_bitrate_bps, hello->nonce}));
       return;
     }

@@ -12,7 +12,10 @@
 
 namespace ministream {
 
+enum class HandshakeRole : std::uint8_t { Controller = 1, Controlled = 2 };
+
 struct Hello {
+  HandshakeRole sender_role{HandshakeRole::Controller};
   VideoCodec codec{VideoCodec::H264};
   std::uint16_t width{};
   std::uint16_t height{};
@@ -23,6 +26,7 @@ struct Hello {
 };
 
 struct Accept {
+  HandshakeRole sender_role{HandshakeRole::Controlled};
   SessionId session_id{};
   VideoCodec codec{VideoCodec::H264};
   std::uint16_t width{};

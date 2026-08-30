@@ -25,12 +25,18 @@ bool valid_codec(std::uint8_t codec) {
          codec == static_cast<std::uint8_t>(VideoCodec::Hevc);
 }
 
+bool valid_role(std::uint8_t role) {
+  return role == static_cast<std::uint8_t>(HandshakeRole::Controller) ||
+         role == static_cast<std::uint8_t>(HandshakeRole::Controlled);
+}
+
 }  // namespace
 
 std::vector<std::byte> encode_hello(const Hello& hello) {
   std::vector<std::byte> bytes;
-  bytes.reserve(20);
+  bytes.reserve(21);
   bytes.push_back(std::byte{1});
+  bytes.push_back(static_cast<std::byte>(hello.sender_role));
   bytes.push_back(static_cast<std::byte>(hello.codec));
   put(bytes, hello.width, 2);
   put(bytes, hello.height, 2);
@@ -41,25 +47,28 @@ std::vector<std::byte> encode_hello(const Hello& hello) {
 }
 
 std::optional<Hello> decode_hello(std::span<const std::byte> bytes) {
-  if (bytes.size() != 20 || bytes[0] != std::byte{1}) {
+  if (bytes.size() != 21 || bytes[0] != std::byte{1}) {
     return std::nullopt;
   }
-  const auto codec = std::to_integer<std::uint8_t>(bytes[1]);
-  const auto width = static_cast<std::uint16_t>(get(bytes.subspan(2, 2)));
-  const auto height = static_cast<std::uint16_t>(get(bytes.subspan(4, 2)));
-  const auto fps = static_cast<std::uint16_t>(get(bytes.subspan(6, 2)));
-  if (!valid_codec(codec) || width == 0 || height == 0 || fps == 0) {
+  const auto role = std::to_integer<std::uint8_t>(bytes[1]);
+  const auto codec = std::to_integer<std::uint8_t>(bytes[2]);
+  const auto width = static_cast<std::uint16_t>(get(bytes.subspan(3, 2)));
+  const auto height = static_cast<std::uint16_t>(get(bytes.subspan(5, 2)));
+  const auto fps = static_cast<std::uint16_t>(get(bytes.subspan(7, 2)));
+  if (role != static_cast<std::uint8_t>(HandshakeRole::Controller) ||
+      !valid_role(role) || !valid_codec(codec) || width == 0 || height == 0 || fps == 0) {
     return std::nullopt;
   }
   return Hello{
-      static_cast<VideoCodec>(codec), width, height, fps,
-      static_cast<std::uint32_t>(get(bytes.subspan(8, 4))), get(bytes.subspan(12, 8))};
+      static_cast<HandshakeRole>(role), static_cast<VideoCodec>(codec), width, height, fps,
+      static_cast<std::uint32_t>(get(bytes.subspan(9, 4))), get(bytes.subspan(13, 8))};
 }
 
 std::vector<std::byte> encode_accept(const Accept& accept) {
   std::vector<std::byte> bytes;
-  bytes.reserve(24);
+  bytes.reserve(25);
   bytes.push_back(std::byte{2});
+  bytes.push_back(static_cast<std::byte>(accept.sender_role));
   bytes.push_back(static_cast<std::byte>(accept.codec));
   put(bytes, accept.width, 2);
   put(bytes, accept.height, 2);
@@ -71,20 +80,22 @@ std::vector<std::byte> encode_accept(const Accept& accept) {
 }
 
 std::optional<Accept> decode_accept(std::span<const std::byte> bytes) {
-  if (bytes.size() != 24 || bytes[0] != std::byte{2}) {
+  if (bytes.size() != 25 || bytes[0] != std::byte{2}) {
     return std::nullopt;
   }
-  const auto codec = std::to_integer<std::uint8_t>(bytes[1]);
-  const auto width = static_cast<std::uint16_t>(get(bytes.subspan(2, 2)));
-  const auto height = static_cast<std::uint16_t>(get(bytes.subspan(4, 2)));
-  const auto fps = static_cast<std::uint16_t>(get(bytes.subspan(6, 2)));
-  if (!valid_codec(codec) || width == 0 || height == 0 || fps == 0) {
+  const auto role = std::to_integer<std::uint8_t>(bytes[1]);
+  const auto codec = std::to_integer<std::uint8_t>(bytes[2]);
+  const auto width = static_cast<std::uint16_t>(get(bytes.subspan(3, 2)));
+  const auto height = static_cast<std::uint16_t>(get(bytes.subspan(5, 2)));
+  const auto fps = static_cast<std::uint16_t>(get(bytes.subspan(7, 2)));
+  if (role != static_cast<std::uint8_t>(HandshakeRole::Controlled) ||
+      !valid_role(role) || !valid_codec(codec) || width == 0 || height == 0 || fps == 0) {
     return std::nullopt;
   }
   return Accept{
-      static_cast<SessionId>(get(bytes.subspan(12, 4))),
+      static_cast<HandshakeRole>(role), static_cast<SessionId>(get(bytes.subspan(13, 4))),
       static_cast<VideoCodec>(codec), width, height, fps,
-      static_cast<std::uint32_t>(get(bytes.subspan(8, 4))), get(bytes.subspan(16, 8))};
+      static_cast<std::uint32_t>(get(bytes.subspan(9, 4))), get(bytes.subspan(17, 8))};
 }
 
 HandshakeRetrier::HandshakeRetrier(Hello hello) : hello_(hello) {}
@@ -98,7 +109,9 @@ std::optional<Hello> HandshakeRetrier::next_hello(SteadyClock::time_point now) {
 }
 
 bool HandshakeRetrier::accept(const Accept& accept) {
-  accepted_ = accept.hello_nonce == hello_.nonce && accept.codec == hello_.codec &&
+  accepted_ = hello_.sender_role == HandshakeRole::Controller &&
+              accept.sender_role == HandshakeRole::Controlled &&
+              accept.hello_nonce == hello_.nonce && accept.codec == hello_.codec &&
               accept.width == hello_.width && accept.height == hello_.height &&
               accept.fps == hello_.fps;
   return accepted_;

@@ -27,6 +27,7 @@ add_library(
   input/input_capture.cpp
   input/rumble_packet.cpp
   session/session_runtime.cpp
+  session/role.cpp
   telemetry/stream_aggregator.cpp
   config/stream_profile.cpp
   video/codec_config_wire.cpp

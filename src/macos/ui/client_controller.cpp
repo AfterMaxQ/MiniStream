@@ -163,7 +163,8 @@ void ClientController::connectToHost(int index) {
     return;
   }
   const auto profile = stream_profile(StreamProfileId::Quality4K);
-  const Hello hello{profile.codec, static_cast<std::uint16_t>(profile.width),
+  const Hello hello{HandshakeRole::Controller, profile.codec,
+                    static_cast<std::uint16_t>(profile.width),
                     static_cast<std::uint16_t>(profile.height),
                     static_cast<std::uint16_t>(profile.fps),
                     static_cast<std::uint32_t>(profile.initial_bitrate_bps), random_nonce()};

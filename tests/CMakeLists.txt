@@ -18,6 +18,7 @@ add_executable(
   security/pairing_test.cpp
   security/session_crypto_test.cpp
   session/handshake_test.cpp
+  session/role_test.cpp
   tools/netprobe_options_test.cpp
   "${PROJECT_SOURCE_DIR}/tools/netprobe/options.cpp"
   net/udp_endpoint_test.cpp
