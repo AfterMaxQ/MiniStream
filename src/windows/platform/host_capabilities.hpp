@@ -12,11 +12,12 @@ struct CapabilityStatus {
 struct HostCapabilities {
   CapabilityStatus video;
   CapabilityStatus audio;
+  CapabilityStatus input;
   CapabilityStatus controller;
   CapabilityStatus network;
 
   [[nodiscard]] bool ready() const noexcept {
-    return video.ready && audio.ready && controller.ready && network.ready;
+    return video.ready && audio.ready && input.ready && network.ready;
   }
 };
 

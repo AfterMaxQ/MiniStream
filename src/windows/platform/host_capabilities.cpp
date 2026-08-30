@@ -89,10 +89,14 @@ CapabilityStatus inspect_network() {
   return {ready, ready ? "UDP available" : "UDP socket unavailable"};
 }
 
+CapabilityStatus inspect_input() {
+  return {true, "Keyboard and mouse available"};
+}
+
 }  // namespace
 
 HostCapabilities inspect_host_capabilities() {
-  return {inspect_nvenc(), inspect_wasapi(), inspect_vigem(), inspect_network()};
+  return {inspect_nvenc(), inspect_wasapi(), inspect_input(), inspect_vigem(), inspect_network()};
 }
 
 }  // namespace ministream

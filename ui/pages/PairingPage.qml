@@ -4,6 +4,7 @@ import MiniStream
 Item {
     id: root
     required property var controller
+    property string peerLabel: ""
 
     Column {
         width: 420
@@ -12,11 +13,12 @@ Item {
 
         Text {
             width: parent.width
-            text: "Confirm pairing code"
+            text: root.peerLabel.length > 0 ? root.peerLabel : "Confirm pairing code"
             color: Tokens.text
             font.pixelSize: 24
             font.weight: Font.DemiBold
             horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
         }
         Text {
             width: parent.width
@@ -29,7 +31,7 @@ Item {
         }
         Text {
             width: parent.width
-            text: "Confirm the same code is shown on the Windows PC."
+            text: "Confirm the same code on both devices."
             color: Tokens.textMuted
             font.pixelSize: 14
             wrapMode: Text.WordWrap

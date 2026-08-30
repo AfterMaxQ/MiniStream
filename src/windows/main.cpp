@@ -23,7 +23,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
   message << "MiniStream Host\r\n\r\n"
           << line("Video", capabilities.video)
           << line("Audio", capabilities.audio)
-          << line("Controller", capabilities.controller)
+          << line("Input", capabilities.input)
+          << line("Gamepad (optional)", capabilities.controller)
           << line("Network", capabilities.network) << "\r\n";
   message << (capabilities.ready()
                   ? "This PC is ready to host."

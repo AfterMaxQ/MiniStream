@@ -31,15 +31,17 @@ class HostController : public QObject {
   Q_PROPERTY(bool ready READ ready NOTIFY capabilitiesChanged)
   Q_PROPERTY(bool videoReady READ videoReady NOTIFY capabilitiesChanged)
   Q_PROPERTY(bool audioReady READ audioReady NOTIFY capabilitiesChanged)
-  Q_PROPERTY(bool controllerReady READ controllerReady NOTIFY capabilitiesChanged)
+  Q_PROPERTY(bool inputReady READ inputReady NOTIFY capabilitiesChanged)
   Q_PROPERTY(bool networkReady READ networkReady NOTIFY capabilitiesChanged)
   Q_PROPERTY(QString videoDetail READ videoDetail NOTIFY capabilitiesChanged)
   Q_PROPERTY(QString audioDetail READ audioDetail NOTIFY capabilitiesChanged)
-  Q_PROPERTY(QString controllerDetail READ controllerDetail NOTIFY capabilitiesChanged)
+  Q_PROPERTY(QString inputDetail READ inputDetail NOTIFY capabilitiesChanged)
   Q_PROPERTY(QString networkDetail READ networkDetail NOTIFY capabilitiesChanged)
   Q_PROPERTY(bool hosting READ hosting NOTIFY hostingChanged)
   Q_PROPERTY(bool pairing READ pairing NOTIFY pairingChanged)
   Q_PROPERTY(QString pairingCode READ pairingCode NOTIFY pairingChanged)
+  Q_PROPERTY(QString deviceLabel READ deviceLabel CONSTANT)
+  Q_PROPERTY(QString broadcastStatus READ broadcastStatus NOTIFY hostingChanged)
 
  public:
   explicit HostController(QObject* parent = nullptr);
@@ -48,15 +50,17 @@ class HostController : public QObject {
   [[nodiscard]] bool ready() const noexcept;
   [[nodiscard]] bool videoReady() const noexcept;
   [[nodiscard]] bool audioReady() const noexcept;
-  [[nodiscard]] bool controllerReady() const noexcept;
+  [[nodiscard]] bool inputReady() const noexcept;
   [[nodiscard]] bool networkReady() const noexcept;
   [[nodiscard]] QString videoDetail() const;
   [[nodiscard]] QString audioDetail() const;
-  [[nodiscard]] QString controllerDetail() const;
+  [[nodiscard]] QString inputDetail() const;
   [[nodiscard]] QString networkDetail() const;
   [[nodiscard]] bool hosting() const noexcept;
   [[nodiscard]] bool pairing() const noexcept;
   [[nodiscard]] QString pairingCode() const;
+  [[nodiscard]] QString deviceLabel() const;
+  [[nodiscard]] QString broadcastStatus() const;
 
   Q_INVOKABLE void refresh();
   Q_INVOKABLE void startHost();
@@ -73,6 +77,7 @@ class HostController : public QObject {
   void pollNetwork();
   void resetPairing();
   void createMediaCrypto();
+  [[nodiscard]] DiscoveryAdvertisement discoveryAdvertisement() const;
 
   HostCapabilities capabilities_;
   bool hosting_{};

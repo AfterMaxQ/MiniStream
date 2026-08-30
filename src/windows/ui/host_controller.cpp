@@ -28,6 +28,48 @@ QString text(const CapabilityStatus& capability) {
   return QString::fromStdString(capability.detail);
 }
 
+DiscoverySystem system_type() {
+  const auto product = QSysInfo::productType().toLower();
+  if (product == QStringLiteral("windows")) {
+    return DiscoverySystem::Windows;
+  }
+  if (product == QStringLiteral("osx") || product == QStringLiteral("macos")) {
+    return DiscoverySystem::MacOS;
+  }
+  if (product == QStringLiteral("linux")) {
+    return DiscoverySystem::Linux;
+  }
+  return DiscoverySystem::Unknown;
+}
+
+QString system_label() {
+  switch (system_type()) {
+    case DiscoverySystem::Windows:
+      return QStringLiteral("Windows");
+    case DiscoverySystem::MacOS:
+      return QStringLiteral("macOS");
+    case DiscoverySystem::Linux:
+      return QStringLiteral("Linux");
+    case DiscoverySystem::Unknown:
+      return QSysInfo::productType().isEmpty() ? QStringLiteral("Unknown")
+                                                : QSysInfo::productType();
+  }
+  return QStringLiteral("Unknown");
+}
+
+QString device_name() {
+  const auto name = QSysInfo::machineHostName().trimmed();
+  return name.isEmpty() ? QStringLiteral("This device") : name;
+}
+
+std::string bounded_device_name() {
+  auto name = device_name().toUtf8().toStdString();
+  if (name.size() > kMaxDiscoveryNameBytes) {
+    name.resize(kMaxDiscoveryNameBytes);
+  }
+  return name;
+}
+
 }  // namespace
 
 HostController::HostController(QObject* parent) : QObject(parent) {
@@ -54,17 +96,39 @@ HostController::~HostController() { stopHost(); }
 bool HostController::ready() const noexcept { return capabilities_.ready(); }
 bool HostController::videoReady() const noexcept { return capabilities_.video.ready; }
 bool HostController::audioReady() const noexcept { return capabilities_.audio.ready; }
-bool HostController::controllerReady() const noexcept {
-  return capabilities_.controller.ready;
-}
+bool HostController::inputReady() const noexcept { return capabilities_.input.ready; }
 bool HostController::networkReady() const noexcept { return capabilities_.network.ready; }
 QString HostController::videoDetail() const { return text(capabilities_.video); }
 QString HostController::audioDetail() const { return text(capabilities_.audio); }
-QString HostController::controllerDetail() const { return text(capabilities_.controller); }
+QString HostController::inputDetail() const { return text(capabilities_.input); }
 QString HostController::networkDetail() const { return text(capabilities_.network); }
 bool HostController::hosting() const noexcept { return hosting_; }
 bool HostController::pairing() const noexcept { return pairing_; }
 QString HostController::pairingCode() const { return pairing_code_; }
+QString HostController::deviceLabel() const {
+  return QStringLiteral("%1 · %2").arg(system_label(), device_name());
+}
+QString HostController::broadcastStatus() const {
+  return hosting_ ? QStringLiteral("Visible on local network")
+                  : QStringLiteral("Not visible on local network");
+}
+
+DiscoveryAdvertisement HostController::discoveryAdvertisement() const {
+  const auto profile = stream_profile(StreamProfileId::Quality4K);
+  return {system_type(),
+          bounded_device_name(),
+          48000,
+          DiscoveryCapabilities{capabilities_.video.ready,
+                                capabilities_.video.ready,
+                                capabilities_.video.ready,
+                                capabilities_.audio.ready,
+                                capabilities_.input.ready,
+                                capabilities_.controller.ready},
+          static_cast<std::uint16_t>(profile.width),
+          static_cast<std::uint16_t>(profile.height),
+          static_cast<std::uint16_t>(profile.fps),
+          true};
+}
 
 void HostController::refresh() {
   capabilities_ = inspect_host_capabilities();
@@ -82,11 +146,14 @@ void HostController::startHost() {
   session_ = std::make_unique<UdpEndpoint>();
   const auto identity = generate_identity();
   const auto ephemeral = generate_ephemeral_keypair();
-  if (!capture_->initialize() || !audio_->start() || !gamepad_->start() ||
-      !discovery_->start() || !session_->bind(48000) || !identity || !ephemeral) {
+  if (!capture_->initialize() || !audio_->start() || !discovery_->start() ||
+      !session_->bind(48000) || !identity || !ephemeral) {
     stopHost();
     refresh();
     return;
+  }
+  if (!gamepad_->start()) {
+    gamepad_.reset();
   }
   identity_ = *identity;
   ephemeral_ = *ephemeral;
@@ -152,9 +219,7 @@ void HostController::cancelPairing() {
 }
 
 void HostController::pollNetwork() {
-  auto name = QSysInfo::machineHostName().toStdString();
-  name.resize(std::min<std::size_t>(name.size(), 48));
-  discovery_->poll({name.empty() ? "Windows PC" : name, 48000});
+  discovery_->poll(discoveryAdvertisement());
 
   const auto incoming = session_->try_receive();
   if (!incoming) {

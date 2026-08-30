@@ -4,10 +4,17 @@
 
 using namespace ministream;
 
-TEST_CASE("host readiness requires all four product capabilities") {
-  HostCapabilities report{
-      {true, "NVENC"}, {true, "WASAPI"}, {true, "ViGEmBus"}, {true, "UDP"}};
+TEST_CASE("host readiness requires media input and network capabilities") {
+  HostCapabilities report{{true, "NVENC"},
+                          {true, "WASAPI"},
+                          {true, "SendInput"},
+                          {false, "ViGEmBus optional"},
+                          {true, "UDP"}};
   REQUIRE(report.ready());
-  report.controller.ready = false;
+  report.input.ready = false;
   REQUIRE_FALSE(report.ready());
+
+  report.input.ready = true;
+  report.controller.ready = false;
+  REQUIRE(report.ready());
 }
