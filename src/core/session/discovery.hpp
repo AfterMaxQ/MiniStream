@@ -15,20 +15,46 @@
 namespace ministream {
 
 inline constexpr std::uint16_t kDiscoveryPort = 47990;
-inline constexpr std::size_t kMaxDiscoveryBytes = 64;
+inline constexpr std::size_t kMaxDiscoveryBytes = 128;
+inline constexpr std::size_t kMaxDiscoveryNameBytes = 48;
+
+enum class DiscoverySystem : std::uint8_t { Unknown = 0, Windows = 1, MacOS = 2, Linux = 3 };
+
+struct DiscoveryCapabilities {
+  bool h264{};
+  bool hevc{};
+  bool hdr10{};
+  bool audio{};
+  bool keyboard_mouse{};
+  bool gamepad{};
+
+  friend bool operator==(const DiscoveryCapabilities&, const DiscoveryCapabilities&) = default;
+};
 
 struct DiscoveryAdvertisement {
-  std::string name;
+  DiscoverySystem system{DiscoverySystem::Unknown};
+  std::string device_name;
   std::uint16_t session_port{};
+  DiscoveryCapabilities capabilities;
+  std::uint16_t max_width{};
+  std::uint16_t max_height{};
+  std::uint16_t max_fps{};
+  bool controllable{};
 
   friend bool operator==(const DiscoveryAdvertisement&,
                          const DiscoveryAdvertisement&) = default;
 };
 
 struct DiscoveredHost {
-  std::string name;
+  DiscoverySystem system{DiscoverySystem::Unknown};
+  std::string device_name;
   std::string address;
   std::uint16_t session_port{};
+  DiscoveryCapabilities capabilities;
+  std::uint16_t max_width{};
+  std::uint16_t max_height{};
+  std::uint16_t max_fps{};
+  bool controllable{};
 };
 
 enum class DiscoveryError { Bind, Send, Receive };

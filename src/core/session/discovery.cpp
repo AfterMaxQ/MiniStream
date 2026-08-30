@@ -14,9 +14,35 @@ namespace {
 
 constexpr std::array<std::byte, 4> kMagic{
     std::byte{'M'}, std::byte{'S'}, std::byte{'D'}, std::byte{'1'}};
-constexpr std::byte kVersion{1};
+constexpr std::byte kVersion{2};
 constexpr std::byte kQuery{1};
 constexpr std::byte kAdvertisement{2};
+constexpr std::uint8_t kControllable = 1U << 0U;
+constexpr std::uint8_t kH264 = 1U << 1U;
+constexpr std::uint8_t kHevc = 1U << 2U;
+constexpr std::uint8_t kHdr10 = 1U << 3U;
+constexpr std::uint8_t kAudio = 1U << 4U;
+constexpr std::uint8_t kKeyboardMouse = 1U << 5U;
+constexpr std::uint8_t kGamepad = 1U << 6U;
+constexpr std::uint8_t kKnownFlags = kControllable | kH264 | kHevc | kHdr10 | kAudio |
+                                      kKeyboardMouse | kGamepad;
+constexpr std::size_t kAdvertisementHeaderBytes = 17;
+
+std::uint8_t encode_flags(const DiscoveryAdvertisement& advertisement) {
+  std::uint8_t flags = kControllable;
+  if (advertisement.capabilities.h264) flags |= kH264;
+  if (advertisement.capabilities.hevc) flags |= kHevc;
+  if (advertisement.capabilities.hdr10) flags |= kHdr10;
+  if (advertisement.capabilities.audio) flags |= kAudio;
+  if (advertisement.capabilities.keyboard_mouse) flags |= kKeyboardMouse;
+  if (advertisement.capabilities.gamepad) flags |= kGamepad;
+  return flags;
+}
+
+bool valid_system(std::uint8_t value) {
+  return value >= static_cast<std::uint8_t>(DiscoverySystem::Windows) &&
+         value <= static_cast<std::uint8_t>(DiscoverySystem::Linux);
+}
 
 }  // namespace
 
@@ -32,17 +58,32 @@ bool is_discovery_query(std::span<const std::byte> bytes) {
 
 std::vector<std::byte> encode_discovery_advertisement(
     const DiscoveryAdvertisement& advertisement) {
-  if (advertisement.name.empty() || advertisement.name.size() > 48 ||
-      advertisement.session_port == 0) {
+  if (advertisement.system == DiscoverySystem::Unknown || advertisement.device_name.empty() ||
+      advertisement.device_name.size() > kMaxDiscoveryNameBytes ||
+      advertisement.session_port == 0 || advertisement.max_width == 0 ||
+      advertisement.max_height == 0 || advertisement.max_fps == 0 || !advertisement.controllable ||
+      (advertisement.capabilities.hdr10 && !advertisement.capabilities.hevc)) {
     return {};
   }
-  std::vector<std::byte> bytes{
-      kMagic[0], kMagic[1], kMagic[2], kMagic[3], kVersion, kAdvertisement,
-      static_cast<std::byte>(advertisement.session_port >> 8U),
-      static_cast<std::byte>(advertisement.name.size()),
-      static_cast<std::byte>(advertisement.session_port)};
-  bytes.reserve(9 + advertisement.name.size());
-  for (const auto character : advertisement.name) {
+  std::vector<std::byte> bytes{kMagic[0],
+                               kMagic[1],
+                               kMagic[2],
+                               kMagic[3],
+                               kVersion,
+                               kAdvertisement,
+                               static_cast<std::byte>(encode_flags(advertisement)),
+                               static_cast<std::byte>(advertisement.system),
+                               static_cast<std::byte>(advertisement.session_port >> 8U),
+                               static_cast<std::byte>(advertisement.session_port),
+                               static_cast<std::byte>(advertisement.max_width >> 8U),
+                               static_cast<std::byte>(advertisement.max_width),
+                               static_cast<std::byte>(advertisement.max_height >> 8U),
+                               static_cast<std::byte>(advertisement.max_height),
+                               static_cast<std::byte>(advertisement.max_fps >> 8U),
+                               static_cast<std::byte>(advertisement.max_fps),
+                               static_cast<std::byte>(advertisement.device_name.size())};
+  bytes.reserve(kAdvertisementHeaderBytes + advertisement.device_name.size());
+  for (const auto character : advertisement.device_name) {
     bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
   }
   return bytes;
@@ -50,27 +91,51 @@ std::vector<std::byte> encode_discovery_advertisement(
 
 std::optional<DiscoveryAdvertisement> decode_discovery_advertisement(
     std::span<const std::byte> bytes) {
-  if (bytes.size() < 10 || bytes.size() > kMaxDiscoveryBytes ||
+  if (bytes.size() < kAdvertisementHeaderBytes + 1 || bytes.size() > kMaxDiscoveryBytes ||
       !std::equal(kMagic.begin(), kMagic.end(), bytes.begin()) ||
       bytes[4] != kVersion || bytes[5] != kAdvertisement) {
     return std::nullopt;
   }
-  const auto name_size = std::to_integer<std::size_t>(bytes[7]);
-  if (name_size == 0 || name_size > 48 || bytes.size() != 9 + name_size) {
-    return std::nullopt;
-  }
+  const auto flags = std::to_integer<std::uint8_t>(bytes[6]);
+  const auto system = std::to_integer<std::uint8_t>(bytes[7]);
   const auto port = static_cast<std::uint16_t>(
-      (std::to_integer<std::uint16_t>(bytes[6]) << 8U) |
-      std::to_integer<std::uint16_t>(bytes[8]));
-  if (port == 0) {
+      (std::to_integer<std::uint16_t>(bytes[8]) << 8U) |
+      std::to_integer<std::uint16_t>(bytes[9]));
+  const auto max_width = static_cast<std::uint16_t>(
+      (std::to_integer<std::uint16_t>(bytes[10]) << 8U) |
+      std::to_integer<std::uint16_t>(bytes[11]));
+  const auto max_height = static_cast<std::uint16_t>(
+      (std::to_integer<std::uint16_t>(bytes[12]) << 8U) |
+      std::to_integer<std::uint16_t>(bytes[13]));
+  const auto max_fps = static_cast<std::uint16_t>(
+      (std::to_integer<std::uint16_t>(bytes[14]) << 8U) |
+      std::to_integer<std::uint16_t>(bytes[15]));
+  const auto name_size = std::to_integer<std::size_t>(bytes[16]);
+  if ((flags & ~kKnownFlags) != 0 || (flags & kControllable) == 0 || !valid_system(system) ||
+      port == 0 || max_width == 0 || max_height == 0 || max_fps == 0 || name_size == 0 ||
+      name_size > kMaxDiscoveryNameBytes || bytes.size() != kAdvertisementHeaderBytes + name_size ||
+      (flags & kHdr10) != 0 && (flags & kHevc) == 0) {
     return std::nullopt;
   }
-  std::string name;
-  name.reserve(name_size);
-  for (const auto byte : bytes.subspan(9)) {
-    name.push_back(static_cast<char>(std::to_integer<unsigned char>(byte)));
+  std::string device_name;
+  device_name.reserve(name_size);
+  for (const auto byte : bytes.subspan(kAdvertisementHeaderBytes)) {
+    device_name.push_back(static_cast<char>(std::to_integer<unsigned char>(byte)));
   }
-  return DiscoveryAdvertisement{std::move(name), port};
+  return DiscoveryAdvertisement{
+      static_cast<DiscoverySystem>(system),
+      std::move(device_name),
+      port,
+      DiscoveryCapabilities{(flags & kH264) != 0,
+                            (flags & kHevc) != 0,
+                            (flags & kHdr10) != 0,
+                            (flags & kAudio) != 0,
+                            (flags & kKeyboardMouse) != 0,
+                            (flags & kGamepad) != 0},
+      max_width,
+      max_height,
+      max_fps,
+      true};
 }
 
 struct DiscoveryHost::Impl {
@@ -101,6 +166,9 @@ Result<void, DiscoveryError> DiscoveryHost::start() {
 
 Result<bool, DiscoveryError> DiscoveryHost::poll(
     const DiscoveryAdvertisement& advertisement) {
+  if (!advertisement.controllable) {
+    return Result<bool, DiscoveryError>::ok(false);
+  }
   std::array<std::byte, kMaxDiscoveryBytes> buffer{};
   asio::ip::udp::endpoint sender;
   asio::error_code error;
@@ -150,12 +218,23 @@ Result<std::vector<DiscoveredHost>, DiscoveryError> discover_hosts(Microseconds 
     if (!error) {
       if (const auto advertisement =
               decode_discovery_advertisement(std::span{buffer}.first(received))) {
+        if (!advertisement->controllable) {
+          continue;
+        }
         const auto address = sender.address().to_string();
         const auto duplicate = std::ranges::any_of(hosts, [&](const DiscoveredHost& host) {
           return host.address == address && host.session_port == advertisement->session_port;
         });
         if (!duplicate) {
-          hosts.push_back({advertisement->name, address, advertisement->session_port});
+          hosts.push_back({advertisement->system,
+                           advertisement->device_name,
+                           address,
+                           advertisement->session_port,
+                           advertisement->capabilities,
+                           advertisement->max_width,
+                           advertisement->max_height,
+                           advertisement->max_fps,
+                           advertisement->controllable});
         }
       }
     } else if (error != asio::error::would_block && error != asio::error::try_again) {

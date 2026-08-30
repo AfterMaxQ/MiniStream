@@ -5,15 +5,38 @@
 using namespace ministream;
 
 TEST_CASE("LAN discovery advertisement has a bounded validated wire format") {
-  const DiscoveryAdvertisement advertisement{"Living Room PC", 48000};
+  const DiscoveryAdvertisement advertisement{
+      DiscoverySystem::Windows,
+      "Living Room PC",
+      48000,
+      DiscoveryCapabilities{true, true, true, true, true, false},
+      3840,
+      2160,
+      60,
+      true};
   const auto bytes = encode_discovery_advertisement(advertisement);
   REQUIRE(bytes.size() <= kMaxDiscoveryBytes);
   REQUIRE(decode_discovery_advertisement(bytes) == advertisement);
 
-  auto malformed = bytes;
-  malformed[7] = std::byte{0xFF};
-  REQUIRE_FALSE(decode_discovery_advertisement(malformed).has_value());
-  REQUIRE_FALSE(encode_discovery_advertisement({std::string(49, 'x'), 48000}).size());
+  auto unknown_flags = bytes;
+  unknown_flags[6] = std::byte{0x80};
+  REQUIRE_FALSE(decode_discovery_advertisement(unknown_flags).has_value());
+  REQUIRE_FALSE(encode_discovery_advertisement(
+                    {DiscoverySystem::Windows, "Living Room PC", 0,
+                     advertisement.capabilities, 3840, 2160, 60, true})
+                    .size());
+  REQUIRE_FALSE(encode_discovery_advertisement(
+                    {DiscoverySystem::Windows, std::string(49, 'x'), 48000,
+                     advertisement.capabilities, 3840, 2160, 60, true})
+                    .size());
+  REQUIRE_FALSE(encode_discovery_advertisement(
+                    {DiscoverySystem::Windows, "Living Room PC", 48000,
+                     advertisement.capabilities, 3840, 2160, 60, false})
+                    .size());
+
+  auto truncated = bytes;
+  truncated.pop_back();
+  REQUIRE_FALSE(decode_discovery_advertisement(truncated).has_value());
 }
 
 TEST_CASE("LAN discovery query is versioned and rejects unrelated traffic") {
