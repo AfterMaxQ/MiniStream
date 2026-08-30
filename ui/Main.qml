@@ -9,7 +9,6 @@ ApplicationWindow {
     minimumWidth: 680
     minimumHeight: 500
     visible: true
-    focus: true
     title: "MiniStream"
     color: Tokens.background
 
@@ -28,7 +27,11 @@ ApplicationWindow {
         enabled: !roleController.remoteInputActive
         onActivated: window.toggleFullscreen()
     }
-
+    Shortcut {
+        sequence: "Esc"
+        enabled: !roleController.remoteInputActive && window.visibility === Window.FullScreen
+        onActivated: window.visibility = Window.Windowed
+    }
     Shortcut {
         sequence: "Ctrl+Alt+R"
         enabled: Qt.platform.os !== "osx" && !roleController.remoteInputActive
@@ -39,58 +42,104 @@ ApplicationWindow {
         enabled: Qt.platform.os === "osx" && !roleController.remoteInputActive
         onActivated: roleController.toggleRemoteInput()
     }
-    Shortcut {
-        sequence: "Ctrl+Alt+F"
-        enabled: Qt.platform.os !== "osx" && !roleController.remoteInputActive
-        onActivated: window.toggleFullscreen()
-    }
-    Shortcut {
-        sequence: "Meta+Alt+F"
-        enabled: Qt.platform.os === "osx" && !roleController.remoteInputActive
-        onActivated: window.toggleFullscreen()
-    }
-    Shortcut {
-        sequence: "Esc"
-        enabled: !roleController.remoteInputActive && window.visibility === Window.FullScreen
-        onActivated: window.visibility = Window.Windowed
-    }
 
-    RoleModeSwitch {
+    Item {
         id: modeSwitch
         anchors.top: parent.top
         anchors.topMargin: Tokens.space16
         anchors.horizontalCenter: parent.horizontalCenter
-        mode: roleController.mode
-        controlledAvailable: roleController.controlledAvailable
-        remoteAvailable: roleController.remoteAvailable
+        width: Math.min(Math.max(0, parent.width - Tokens.space32), 360)
+        height: 40
         visible: !roleController.pairing
-        onModeSelected: roleController.setMode(mode)
-    }
+        z: 10
 
-    Loader {
-        anchors.fill: parent
-        sourceComponent: roleController.pairing ? pairingPage
-                         : roleController.connected ? streamPage
-                         : roleController.mode === 1 ? controlledPage : remotePage
-    }
+        Rectangle {
+            anchors.fill: parent
+            radius: Tokens.radius10
+            color: Tokens.surface
+            border.color: Tokens.border
 
-    Component {
-        id: controlledPage
-        ControlledPage { controller: roleController }
-    }
-    Component {
-        id: remotePage
-        RemotePage { controller: roleController }
-    }
-    Component {
-        id: pairingPage
-        PairingPage {
-            controller: roleController
-            peerLabel: roleController.selectedDeviceLabel
+            Row {
+                anchors.fill: parent
+                anchors.margins: 3
+                spacing: 3
+
+                Rectangle {
+                    width: (parent.width - parent.spacing) / 2
+                    height: parent.height
+                    radius: Tokens.radius6
+                    color: roleController.mode === 1 ? Tokens.accent : "transparent"
+
+                    Text {
+                        anchors.fill: parent
+                        text: "Allow control"
+                        color: roleController.controlledAvailable
+                               ? (roleController.mode === 1 ? Tokens.text : Tokens.textMuted)
+                               : Tokens.border
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: roleController.controlledAvailable
+                        onClicked: roleController.setMode(1)
+                    }
+                }
+
+                Rectangle {
+                    width: (parent.width - parent.spacing) / 2
+                    height: parent.height
+                    radius: Tokens.radius6
+                    color: roleController.mode === 2 ? Tokens.accent : "transparent"
+
+                    Text {
+                        anchors.fill: parent
+                        text: "Remote control"
+                        color: roleController.remoteAvailable
+                               ? (roleController.mode === 2 ? Tokens.text : Tokens.textMuted)
+                               : Tokens.border
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: roleController.remoteAvailable
+                        onClicked: roleController.setMode(2)
+                    }
+                }
+            }
         }
     }
-    Component {
-        id: streamPage
-        StreamPage { controller: roleController }
+
+    ControlledPage {
+        anchors.fill: parent
+        controller: roleController
+        visible: !roleController.pairing && !roleController.connected && roleController.mode === 1
     }
+
+    RemotePage {
+        anchors.fill: parent
+        controller: roleController
+        visible: !roleController.pairing && !roleController.connected && roleController.mode === 2
+    }
+
+    PairingPage {
+        anchors.fill: parent
+        controller: roleController
+        peerLabel: roleController.selectedDeviceLabel
+        visible: roleController.pairing
+    }
+
+    StreamPage {
+        anchors.fill: parent
+        controller: roleController
+        visible: roleController.connected
+    }
+
 }

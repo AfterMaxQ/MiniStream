@@ -6,7 +6,6 @@ function(ministream_add_qml_ui target)
       "${_ui_root}/components/AppButton.qml"
       "${_ui_root}/components/StatusRow.qml"
       "${_ui_root}/components/SectionHeader.qml"
-      "${_ui_root}/components/RoleModeSwitch.qml"
       "${_ui_root}/pages/ControlledPage.qml"
       "${_ui_root}/pages/RemotePage.qml"
       "${_ui_root}/pages/StreamPage.qml"
