@@ -12,6 +12,7 @@ add_library(
   audio/wasapi_output.cpp
   input/virtual_gamepad.cpp
   input/vigem_gamepad.cpp
+  input/desktop_key_windows.cpp
   input/remote_input_sink.cpp
   input/window_input_source.cpp
 )

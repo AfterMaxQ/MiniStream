@@ -47,6 +47,9 @@ TEST_CASE("LAN discovery advertisement has a bounded validated wire format") {
   auto unknown_flags = bytes;
   unknown_flags[6] = std::byte{0x80};
   REQUIRE_FALSE(decode_discovery_advertisement(unknown_flags).has_value());
+  auto old_version = bytes;
+  old_version[4] = std::byte{2};
+  REQUIRE_FALSE(decode_discovery_advertisement(old_version).has_value());
   REQUIRE_FALSE(encode_discovery_advertisement(
                     {DiscoverySystem::Windows, "Living Room PC", 0,
                      advertisement.capabilities, 3840, 2160, 60, true})
@@ -68,9 +71,13 @@ TEST_CASE("LAN discovery advertisement has a bounded validated wire format") {
 TEST_CASE("LAN discovery query is versioned and rejects unrelated traffic") {
   const auto query = encode_discovery_query();
   REQUIRE(is_discovery_query(query));
+  REQUIRE(query[4] == std::byte{3});
   auto unrelated = query;
   unrelated[0] = std::byte{0};
   REQUIRE_FALSE(is_discovery_query(unrelated));
+  auto old_version = query;
+  old_version[4] = std::byte{2};
+  REQUIRE_FALSE(is_discovery_query(old_version));
 }
 
 TEST_CASE("discovered device formatting shows stream parameters without gamepad details") {

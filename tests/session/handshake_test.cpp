@@ -11,14 +11,20 @@ TEST_CASE("handshake messages have deterministic validated wire formats") {
   const Hello hello{HandshakeRole::Controller, VideoCodec::Hevc, true, 3840, 2160, 60,
                     50'000'000, 0x0102030405060708ULL};
   auto encoded_hello = encode_hello(hello);
+  REQUIRE(encoded_hello.size() == 23);
+  REQUIRE(encoded_hello[0] == std::byte{2});
+  REQUIRE(encoded_hello[1] == std::byte{1});
   REQUIRE(decode_hello(encoded_hello) == hello);
 
   const Accept accept{HandshakeRole::Controlled, 42, VideoCodec::Hevc, true, 3840, 2160, 60,
                       50'000'000, hello.nonce};
   const auto encoded_accept = encode_accept(accept);
+  REQUIRE(encoded_accept.size() == 27);
+  REQUIRE(encoded_accept[0] == std::byte{2});
+  REQUIRE(encoded_accept[1] == std::byte{2});
   REQUIRE(decode_accept(encoded_accept) == accept);
 
-  encoded_hello[0] = std::byte{0xFF};
+  encoded_hello[0] = std::byte{1};
   REQUIRE_FALSE(decode_hello(encoded_hello));
 }
 

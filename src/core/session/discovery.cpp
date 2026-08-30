@@ -31,7 +31,7 @@ namespace {
 
 constexpr std::array<std::byte, 4> kMagic{
     std::byte{'M'}, std::byte{'S'}, std::byte{'D'}, std::byte{'1'}};
-constexpr std::byte kVersion{2};
+constexpr std::byte kVersion{3};
 constexpr std::byte kQuery{1};
 constexpr std::byte kAdvertisement{2};
 constexpr std::uint8_t kControllable = 1U << 0U;

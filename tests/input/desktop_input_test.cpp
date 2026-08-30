@@ -19,3 +19,12 @@ TEST_CASE("desktop input rejects malformed or unknown events") {
   bytes[0] = static_cast<std::byte>(99);
   REQUIRE_FALSE(decode_desktop_input(bytes));
 }
+
+TEST_CASE("desktop key input accepts neutral usages and rejects native key codes") {
+  const DesktopInput release{DesktopInputKind::Key, kDesktopKeyRelease, 0, 0,
+                             static_cast<std::uint16_t>(DesktopKey::W)};
+  REQUIRE(decode_desktop_input(encode_desktop_input(release)) == release);
+
+  const DesktopInput windows_vk{DesktopInputKind::Key, 0, 0, 0, 87};
+  REQUIRE(encode_desktop_input(windows_vk).empty());
+}

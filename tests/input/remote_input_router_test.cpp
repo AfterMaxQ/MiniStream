@@ -12,7 +12,8 @@ TEST_CASE("remote input router forwards escape while remote mode is active") {
   REQUIRE(router.active());
   REQUIRE(router.route({DesktopInputKind::MouseMove, 0, 1, 2, 0}));
   REQUIRE(sent == 1);
-  REQUIRE(router.route({DesktopInputKind::Key, 0, 0, 0, 0x1B}));
+  REQUIRE(router.route({DesktopInputKind::Key, 0, 0, 0,
+                        static_cast<std::uint16_t>(DesktopKey::Escape)}));
   REQUIRE(sent == 2);
   REQUIRE(router.active());
   router.end();

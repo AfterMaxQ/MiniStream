@@ -28,6 +28,10 @@ std::vector<std::byte> encode_desktop_input(const DesktopInput& input) {
   if (input.kind < DesktopInputKind::Key || input.kind > DesktopInputKind::MouseWheel) {
     return {};
   }
+  if (input.kind == DesktopInputKind::Key &&
+      (!desktop_key_from_wire(input.data) || (input.flags & ~kDesktopKeyRelease) != 0U)) {
+    return {};
+  }
   std::vector<std::byte> bytes(kDesktopInputBytes);
   bytes[0] = static_cast<std::byte>(input.kind);
   put16(bytes.data() + 1, input.flags);
@@ -52,6 +56,10 @@ std::optional<DesktopInput> decode_desktop_input(std::span<const std::byte> byte
   input.x = static_cast<std::int32_t>(get(bytes.data() + 3));
   input.y = static_cast<std::int32_t>(get(bytes.data() + 7));
   input.data = get16(bytes.data() + 11);
+  if (input.kind == DesktopInputKind::Key &&
+      (!desktop_key_from_wire(input.data) || (input.flags & ~kDesktopKeyRelease) != 0U)) {
+    return std::nullopt;
+  }
   return input;
 }
 

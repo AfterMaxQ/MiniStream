@@ -244,13 +244,15 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
 
   remote.toggle_input();
   REQUIRE(remote.remote_input_active());
-  REQUIRE(remote.route_input({DesktopInputKind::Key, 0, 65, 1, 0}));
+  const DesktopInput key_down{DesktopInputKind::Key, 0, 0, 0,
+                              static_cast<std::uint16_t>(DesktopKey::W)};
+  REQUIRE(remote.route_input(key_down));
   for (unsigned attempt = 0; attempt < 100U && controlled_backend_ptr->injected_inputs.empty();
        ++attempt) {
     pump(controlled, remote);
   }
   REQUIRE(controlled_backend_ptr->injected_inputs.size() == 1);
-  REQUIRE(controlled_backend_ptr->injected_inputs.front().x == 65);
+  REQUIRE(controlled_backend_ptr->injected_inputs.front() == key_down);
 
   for (unsigned attempt = 0; attempt < 800U &&
                                 (remote_backend_ptr->decoded_video.empty() ||

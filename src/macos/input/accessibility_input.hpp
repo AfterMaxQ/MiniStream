@@ -13,6 +13,7 @@ enum class AccessibilityInputError { Permission, InvalidEvent, PostFailed };
 class AccessibilityInput {
  public:
   static bool trusted() noexcept;
+  static std::optional<std::uint16_t> native_key_code(DesktopKey key) noexcept;
   static std::optional<DesktopInput> key_from_qt(std::uint32_t qt_key,
                                                  bool pressed) noexcept;
   static std::optional<DesktopInput> mouse_button_from_qt(std::uint32_t qt_button,

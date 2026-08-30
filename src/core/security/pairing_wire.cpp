@@ -1,4 +1,5 @@
 #include "core/security/pairing_wire.hpp"
+#include "core/protocol/wire.hpp"
 
 #include <algorithm>
 
@@ -6,7 +7,7 @@ namespace ministream {
 namespace {
 
 constexpr std::array<std::byte, 4> kMagic{
-    std::byte{'M'}, std::byte{'S'}, std::byte{'P'}, std::byte{'1'}};
+    std::byte{'M'}, std::byte{'S'}, std::byte{'P'}, std::byte{'2'}};
 constexpr std::byte kOffer{1};
 constexpr std::byte kConfirmation{2};
 
@@ -78,7 +79,7 @@ std::optional<PairingTranscript> pairing_transcript(const PairingOffer& initiato
       responder.role != PairingRole::Responder) {
     return std::nullopt;
   }
-  return PairingTranscript{1,
+  return PairingTranscript{kProtocolVersion,
                            initiator.nonce,
                            responder.nonce,
                            initiator.identity,

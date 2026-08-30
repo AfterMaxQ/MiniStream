@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/input/desktop_key.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -24,6 +26,7 @@ enum class DesktopMouseButton : std::uint16_t {
 };
 
 inline constexpr std::uint16_t kDesktopMouseRelease = 0x8000U;
+inline constexpr std::uint16_t kDesktopKeyRelease = 0x0001U;
 
 struct DesktopInput {
   DesktopInputKind kind{DesktopInputKind::Key};

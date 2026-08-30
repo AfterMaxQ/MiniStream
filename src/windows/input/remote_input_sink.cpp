@@ -1,4 +1,5 @@
 #include "windows/input/remote_input_sink.hpp"
+#include "windows/input/desktop_key_windows.hpp"
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
@@ -9,10 +10,19 @@ Result<void, RemoteInputError> RemoteInputSink::inject(const DesktopInput& input
   INPUT event{};
   switch (input.kind) {
     case DesktopInputKind::Key:
+      {
+      const auto key = desktop_key_from_wire(input.data);
+      const auto translation = key ? windows_key_translation(*key) : std::nullopt;
+      if (!translation || (input.flags & ~kDesktopKeyRelease) != 0U) {
+        return Result<void, RemoteInputError>::err(RemoteInputError::InvalidEvent);
+      }
       event.type = INPUT_KEYBOARD;
-      event.ki.wVk = input.data;
-      event.ki.dwFlags = input.flags;
+      event.ki.wScan = translation->scan_code;
+      event.ki.dwFlags = KEYEVENTF_SCANCODE |
+                         (translation->extended ? KEYEVENTF_EXTENDEDKEY : 0U) |
+                         ((input.flags & kDesktopKeyRelease) ? KEYEVENTF_KEYUP : 0U);
       break;
+      }
     case DesktopInputKind::MouseMove:
       event.type = INPUT_MOUSE;
       event.mi.dx = input.x;

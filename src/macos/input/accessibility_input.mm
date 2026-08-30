@@ -6,61 +6,71 @@
 
 namespace ministream {
 
-namespace {
+bool AccessibilityInput::trusted() noexcept { return AXIsProcessTrusted(); }
 
-std::optional<std::uint16_t> key_code(std::uint32_t key) noexcept {
-  if (key >= static_cast<std::uint32_t>('A') && key <= static_cast<std::uint32_t>('Z')) {
+std::optional<std::uint16_t> AccessibilityInput::native_key_code(DesktopKey key) noexcept {
+  const auto value = static_cast<std::uint16_t>(key);
+  if (value >= static_cast<std::uint16_t>(DesktopKey::A) &&
+      value <= static_cast<std::uint16_t>(DesktopKey::Z)) {
     constexpr std::uint16_t codes[] = {
         0, 11, 8, 2, 14, 3, 5, 4, 34, 38, 40, 37, 46, 45, 31, 35, 12, 15, 1, 17,
         32, 9, 13, 7, 16, 6};
-    return codes[key - static_cast<std::uint32_t>('A')];
+    return codes[value - static_cast<std::uint16_t>(DesktopKey::A)];
   }
-  if (key >= static_cast<std::uint32_t>('a') && key <= static_cast<std::uint32_t>('z')) {
-    return key_code(key - static_cast<std::uint32_t>('a' - 'A'));
+  if (value >= static_cast<std::uint16_t>(DesktopKey::Digit1) &&
+      value <= static_cast<std::uint16_t>(DesktopKey::Digit0)) {
+    constexpr std::uint16_t codes[] = {18, 19, 20, 21, 23, 22, 26, 28, 25, 29};
+    return codes[value - static_cast<std::uint16_t>(DesktopKey::Digit1)];
   }
-  if (key >= static_cast<std::uint32_t>('0') && key <= static_cast<std::uint32_t>('9')) {
-    constexpr std::uint16_t codes[] = {29, 18, 19, 20, 21, 23, 22, 26, 28, 25};
-    return codes[key - static_cast<std::uint32_t>('0')];
+  if (value >= static_cast<std::uint16_t>(DesktopKey::F1) &&
+      value <= static_cast<std::uint16_t>(DesktopKey::F12)) {
+    constexpr std::uint16_t codes[] = {122, 120, 99, 118, 96, 97,
+                                       98, 100, 101, 109, 103, 111};
+    return codes[value - static_cast<std::uint16_t>(DesktopKey::F1)];
   }
   switch (key) {
-    case 0x01000000U: return 53;   // Escape
-    case 0x01000001U: return 48;   // Tab
-    case 0x01000003U: return 51;   // Backspace
-    case 0x01000004U:
-    case 0x01000005U: return 36;   // Return / Enter
-    case 0x01000007U: return 51;   // Delete
-    case 0x01000010U: return 115;  // Home
-    case 0x01000011U: return 119;  // End
-    case 0x01000012U: return 123;  // Left
-    case 0x01000013U: return 126;  // Up
-    case 0x01000014U: return 124;  // Right
-    case 0x01000015U: return 125;  // Down
-    case 0x01000016U: return 116;  // Page up
-    case 0x01000017U: return 121;  // Page down
-    case 0x01000020U: return 56;   // Shift
-    case 0x01000021U: return 59;   // Control
-    case 0x01000022U: return 55;   // Command
-    case 0x01000023U: return 58;   // Option
-    case 0x01000024U: return 57;   // Caps lock
-    default: break;
+    case DesktopKey::Enter: return 36;
+    case DesktopKey::Escape: return 53;
+    case DesktopKey::Backspace: return 51;
+    case DesktopKey::Tab: return 48;
+    case DesktopKey::Space: return 49;
+    case DesktopKey::Minus: return 27;
+    case DesktopKey::Equal: return 24;
+    case DesktopKey::LeftBracket: return 33;
+    case DesktopKey::RightBracket: return 30;
+    case DesktopKey::Backslash: return 42;
+    case DesktopKey::Semicolon: return 41;
+    case DesktopKey::Apostrophe: return 39;
+    case DesktopKey::Grave: return 50;
+    case DesktopKey::Comma: return 43;
+    case DesktopKey::Period: return 47;
+    case DesktopKey::Slash: return 44;
+    case DesktopKey::CapsLock: return 57;
+    case DesktopKey::Insert: return 114;
+    case DesktopKey::Home: return 115;
+    case DesktopKey::PageUp: return 116;
+    case DesktopKey::DeleteForward: return 117;
+    case DesktopKey::End: return 119;
+    case DesktopKey::PageDown: return 121;
+    case DesktopKey::Right: return 124;
+    case DesktopKey::Left: return 123;
+    case DesktopKey::Down: return 125;
+    case DesktopKey::Up: return 126;
+    case DesktopKey::LeftControl: return 59;
+    case DesktopKey::LeftShift: return 56;
+    case DesktopKey::LeftAlt: return 58;
+    case DesktopKey::LeftMeta: return 55;
+    default: return std::nullopt;
   }
-  if (key >= 0x01000030U && key <= 0x0100003BU) {
-    constexpr std::uint16_t codes[] = {122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111};
-    return codes[key - 0x01000030U];
-  }
-  return std::nullopt;
 }
-
-}  // namespace
-
-bool AccessibilityInput::trusted() noexcept { return AXIsProcessTrusted(); }
 
 std::optional<DesktopInput> AccessibilityInput::key_from_qt(std::uint32_t qt_key,
                                                              bool pressed) noexcept {
-  const auto code = key_code(qt_key);
-  if (!code) return std::nullopt;
+  const auto key = desktop_key_from_qt(qt_key);
+  if (!key) return std::nullopt;
   return DesktopInput{DesktopInputKind::Key,
-                      static_cast<std::uint16_t>(pressed ? 0 : 0x0002U), 0, 0, *code};
+                      static_cast<std::uint16_t>(pressed ? 0 : kDesktopKeyRelease), 0, 0,
+                      static_cast<std::uint16_t>(*key)};
 }
 
 std::optional<DesktopInput> AccessibilityInput::mouse_button_from_qt(
@@ -83,8 +93,13 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
   }
   CGEventRef event = nullptr;
   if (input.kind == DesktopInputKind::Key) {
-    event = CGEventCreateKeyboardEvent(nullptr, static_cast<CGKeyCode>(input.data),
-                                       (input.flags & 0x0002U) == 0U);
+    const auto key = desktop_key_from_wire(input.data);
+    const auto code = key ? native_key_code(*key) : std::nullopt;
+    if (!code || (input.flags & ~kDesktopKeyRelease) != 0U) {
+      return Result<void, AccessibilityInputError>::err(AccessibilityInputError::InvalidEvent);
+    }
+    event = CGEventCreateKeyboardEvent(nullptr, static_cast<CGKeyCode>(*code),
+                                       (input.flags & kDesktopKeyRelease) == 0U);
   } else if (input.kind == DesktopInputKind::MouseMove) {
     auto current = CGEventCreate(nullptr);
     const auto location = current ? CGEventGetLocation(current) : CGPointZero;

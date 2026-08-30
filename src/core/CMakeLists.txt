@@ -22,6 +22,7 @@ add_library(
   audio/jitter_buffer.cpp
   audio/drift_controller.cpp
   input/gamepad_packet.cpp
+  input/desktop_key.cpp
   input/desktop_input.cpp
   input/remote_input_router.cpp
   input/input_coalescer.cpp
