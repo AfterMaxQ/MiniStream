@@ -4,7 +4,7 @@
 
 using namespace ministream;
 
-TEST_CASE("remote input router releases all leases on escape") {
+TEST_CASE("remote input router forwards escape while remote mode is active") {
   InputCapture capture;
   std::size_t sent = 0;
   RemoteInputRouter router{capture, [&](const DesktopInput&) { ++sent; }};
@@ -12,7 +12,10 @@ TEST_CASE("remote input router releases all leases on escape") {
   REQUIRE(router.active());
   REQUIRE(router.route({DesktopInputKind::MouseMove, 0, 1, 2, 0}));
   REQUIRE(sent == 1);
-  REQUIRE_FALSE(router.route({DesktopInputKind::Key, 0, 0, 0, 0x1B}));
+  REQUIRE(router.route({DesktopInputKind::Key, 0, 0, 0, 0x1B}));
+  REQUIRE(sent == 2);
+  REQUIRE(router.active());
+  router.end();
   REQUIRE_FALSE(router.active());
   REQUIRE_FALSE(capture.captured(InputDevice::Keyboard));
   REQUIRE_FALSE(capture.captured(InputDevice::Mouse));

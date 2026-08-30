@@ -14,13 +14,17 @@ bool RemoteInputRouter::begin() {
   auto keyboard = capture_.capture(InputDevice::Keyboard);
   auto mouse = capture_.capture(InputDevice::Mouse);
   auto gamepad = capture_.capture(InputDevice::Gamepad);
-  if (!keyboard || !mouse || !gamepad) {
+  if (!keyboard || !mouse) {
     end();
     return false;
   }
   keyboard_lease_ = std::move(*keyboard);
   mouse_lease_ = std::move(*mouse);
-  gamepad_lease_ = std::move(*gamepad);
+  // Gamepads are optional.  Keyboard and mouse remain the baseline path even
+  // when no local gamepad is connected or available to the native backend.
+  if (gamepad) {
+    gamepad_lease_ = std::move(*gamepad);
+  }
   return true;
 }
 
@@ -37,12 +41,8 @@ bool RemoteInputRouter::route(const DesktopInput& input) {
   if (!active() || !sender_) {
     return false;
   }
-  // VK_ESCAPE is always reserved for the local window. The F12 combination
-  // is handled by the UI shortcut before events reach this router.
-  if (input.kind == DesktopInputKind::Key && input.data == 0x1BU) {
-    end();
-    return false;
-  }
+  // The UI owns the local shortcuts only while remote input is inactive. In
+  // remote mode Esc/F11 are ordinary game input and must be forwarded.
   sender_(input);
   return true;
 }

@@ -9,7 +9,8 @@
 namespace ministream {
 
 // Window-local input routing. It deliberately has no global hooks: callers
-// feed events from their window and keep Esc/F12 local before calling route().
+// feed events from their window and stop the router when input should return
+// to the local device.
 class RemoteInputRouter {
  public:
   using Sender = std::function<void(const DesktopInput&)>;

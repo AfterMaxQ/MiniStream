@@ -2,15 +2,11 @@ function(ministream_add_qml_ui target)
   set(_ui_root "${PROJECT_SOURCE_DIR}/ui")
   set(_qml_files
       "${_ui_root}/Main.qml"
-      "${_ui_root}/HostMain.qml"
-      "${_ui_root}/ClientMain.qml"
       "${_ui_root}/theme/Tokens.qml"
       "${_ui_root}/components/AppButton.qml"
       "${_ui_root}/components/StatusRow.qml"
       "${_ui_root}/components/SectionHeader.qml"
       "${_ui_root}/components/RoleModeSwitch.qml"
-      "${_ui_root}/pages/HostHomePage.qml"
-      "${_ui_root}/pages/ClientHomePage.qml"
       "${_ui_root}/pages/ControlledPage.qml"
       "${_ui_root}/pages/RemotePage.qml"
       "${_ui_root}/pages/StreamPage.qml"

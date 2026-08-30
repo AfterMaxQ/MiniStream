@@ -6,10 +6,12 @@
 #ifdef _WIN32
 #include "windows/platform/controlled_backend.hpp"
 #include "windows/platform/remote_backend.hpp"
+#include "windows/input/window_input_source.hpp"
 #endif
 #ifdef __APPLE__
 #include "macos/platform/controlled_backend.hpp"
 #include "macos/platform/remote_backend.hpp"
+#include "macos/input/accessibility_input.hpp"
 #endif
 
 #include <QSysInfo>
@@ -544,6 +546,80 @@ void RoleController::releaseRemoteInput() {
   }
 #endif
   emit stateChanged();
+}
+
+void RoleController::routeKey(int key, bool pressed) {
+#ifdef _WIN32
+  if (remote_ && remoteInputActive()) {
+    if (const auto input = WindowInputSource::key(static_cast<std::uint32_t>(key), pressed)) {
+      remote_->route_input(*input);
+    }
+  }
+#elif defined(__APPLE__)
+  if (remote_ && remoteInputActive()) {
+    if (const auto input = AccessibilityInput::key_from_qt(static_cast<std::uint32_t>(key),
+                                                            pressed)) {
+      remote_->route_input(*input);
+    }
+  }
+#else
+  Q_UNUSED(key);
+  Q_UNUSED(pressed);
+#endif
+}
+
+void RoleController::routeMouseMove(int dx, int dy) {
+#ifdef _WIN32
+  if (remote_ && remoteInputActive()) {
+    if (const auto input = WindowInputSource::mouse_move(dx, dy)) {
+      remote_->route_input(*input);
+    }
+  }
+#elif defined(__APPLE__)
+  if (remote_ && remoteInputActive()) {
+    remote_->route_input({DesktopInputKind::MouseMove, 0, dx, dy, 0});
+  }
+#else
+  Q_UNUSED(dx);
+  Q_UNUSED(dy);
+#endif
+}
+
+void RoleController::routeMouseButton(int button, bool pressed) {
+#ifdef _WIN32
+  if (remote_ && remoteInputActive()) {
+    if (const auto input = WindowInputSource::mouse_button(static_cast<std::uint32_t>(button),
+                                                           pressed)) {
+      remote_->route_input(*input);
+    }
+  }
+#elif defined(__APPLE__)
+  if (remote_ && remoteInputActive()) {
+    if (const auto input = AccessibilityInput::mouse_button_from_qt(
+            static_cast<std::uint32_t>(button), pressed)) {
+      remote_->route_input(*input);
+    }
+  }
+#else
+  Q_UNUSED(button);
+  Q_UNUSED(pressed);
+#endif
+}
+
+void RoleController::routeMouseWheel(int delta) {
+#ifdef _WIN32
+  if (remote_ && remoteInputActive()) {
+    if (const auto input = WindowInputSource::mouse_wheel(delta)) {
+      remote_->route_input(*input);
+    }
+  }
+#elif defined(__APPLE__)
+  if (remote_ && remoteInputActive()) {
+    remote_->route_input({DesktopInputKind::MouseWheel, 0, 0, delta, 0});
+  }
+#else
+  Q_UNUSED(delta);
+#endif
 }
 
 void RoleController::disconnect() {

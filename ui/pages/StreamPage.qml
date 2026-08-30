@@ -7,10 +7,46 @@ Item {
     required property var controller
 
     Rectangle {
+        id: videoSurface
         anchors.fill: parent
         color: "#050607"
 
+        MouseArea {
+            anchors.fill: parent
+            z: -1
+            hoverEnabled: true
+            property real lastX: 0
+            property real lastY: 0
+            onEntered: {
+                lastX = mouseX
+                lastY = mouseY
+            }
+            onPositionChanged: {
+                if (root.controller.remoteInputActive) {
+                    root.controller.routeMouseMove(mouseX - lastX, mouseY - lastY)
+                }
+                lastX = mouseX
+                lastY = mouseY
+            }
+            onPressed: {
+                if (root.controller.remoteInputActive) {
+                    root.controller.routeMouseButton(mouse.button, true)
+                }
+            }
+            onReleased: {
+                if (root.controller.remoteInputActive) {
+                    root.controller.routeMouseButton(mouse.button, false)
+                }
+            }
+            onWheel: {
+                if (root.controller.remoteInputActive) {
+                    root.controller.routeMouseWheel(wheel.angleDelta.y)
+                }
+            }
+        }
+
         Column {
+            z: 1
             anchors.centerIn: parent
             width: Math.min(parent.width - Tokens.space32 * 2, 620)
             spacing: Tokens.space12

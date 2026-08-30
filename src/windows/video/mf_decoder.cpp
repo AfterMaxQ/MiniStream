@@ -92,7 +92,14 @@ bool MfDecoder::hardware_available(VideoCodec codec) noexcept {
   if (FAILED(initialized) && initialized != RPC_E_CHANGED_MODE) {
     return false;
   }
+  if (FAILED(MFStartup(MF_VERSION))) {
+    if (SUCCEEDED(initialized)) {
+      CoUninitialize();
+    }
+    return false;
+  }
   const bool available = enumerate_decoder(codec);
+  MFShutdown();
   if (SUCCEEDED(initialized)) {
     CoUninitialize();
   }
@@ -232,16 +239,27 @@ Result<void, MfDecodeError> MfDecoder::decode(std::span<const std::byte> encoded
       if (FAILED(MFCreateSample(&output_sample))) {
         return Result<void, MfDecodeError>::err(MfDecodeError::Output);
       }
-      ComPtr<IMFMediaBuffer> output_buffer;
-      if (FAILED(MFCreateDXGISurfaceBuffer(IID_ID3D11Texture2D, nullptr, 0, FALSE,
-                                           &output_buffer))) {
-        output_buffer.Reset();
-        if (FAILED(MFCreateMemoryBuffer(std::max<DWORD>(stream_info.cbSize, 1),
-                                         &output_buffer))) {
-          return Result<void, MfDecodeError>::err(MfDecodeError::Output);
-        }
+      D3D11_TEXTURE2D_DESC texture_description{};
+      texture_description.Width = impl_->config.width;
+      texture_description.Height = impl_->config.height;
+      texture_description.MipLevels = 1;
+      texture_description.ArraySize = 1;
+      texture_description.Format = DXGI_FORMAT_NV12;
+      texture_description.SampleDesc.Count = 1;
+      texture_description.Usage = D3D11_USAGE_DEFAULT;
+      ComPtr<ID3D11Texture2D> texture;
+      if (!impl_->device || FAILED(impl_->device->CreateTexture2D(
+                                 &texture_description, nullptr, &texture))) {
+        return Result<void, MfDecodeError>::err(MfDecodeError::Output);
       }
-      output_sample->AddBuffer(output_buffer.Get());
+      ComPtr<IMFMediaBuffer> output_buffer;
+      if (FAILED(MFCreateDXGISurfaceBuffer(IID_ID3D11Texture2D, texture.Get(), 0, FALSE,
+                                           &output_buffer))) {
+        return Result<void, MfDecodeError>::err(MfDecodeError::Output);
+      }
+      if (FAILED(output_sample->AddBuffer(output_buffer.Get()))) {
+        return Result<void, MfDecodeError>::err(MfDecodeError::Output);
+      }
     }
     MFT_OUTPUT_DATA_BUFFER output{0, output_sample.Get(), 0, nullptr};
     DWORD status = 0;

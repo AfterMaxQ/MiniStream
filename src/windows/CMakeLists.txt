@@ -44,14 +44,9 @@ if(MINISTREAM_BUILD_UI)
     PRIVATE ministream_app ministream_windows_platform Qt6::Quick Qt6::Qml Qt6::QuickControls2
   )
   ministream_add_qml_ui(ministream)
-else()
-  add_executable(ministream_host WIN32 main.cpp)
-  target_link_libraries(ministream_host PRIVATE ministream_windows_platform)
 endif()
 if(MINISTREAM_BUILD_UI)
   ministream_set_warnings(ministream)
-else()
-  ministream_set_warnings(ministream_host)
 endif()
 
 if(MINISTREAM_BUILD_UI)
@@ -64,14 +59,7 @@ if(MINISTREAM_BUILD_UI)
   )
   install(TARGETS ministream RUNTIME DESTINATION bin COMPONENT Runtime)
   ministream_install_qt_runtime(ministream)
-else()
-  add_custom_command(
-    TARGET ministream_host
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:ministream_sodium>
-            $<TARGET_FILE_DIR:ministream_host>
-  )
-  install(TARGETS ministream_host RUNTIME DESTINATION bin COMPONENT Runtime)
 endif()
-install(FILES "$<TARGET_FILE:ministream_sodium>" DESTINATION bin COMPONENT Runtime)
+if(MINISTREAM_BUILD_UI)
+  install(FILES "$<TARGET_FILE:ministream_sodium>" DESTINATION bin COMPONENT Runtime)
+endif()

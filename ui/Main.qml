@@ -9,6 +9,7 @@ ApplicationWindow {
     minimumWidth: 680
     minimumHeight: 500
     visible: true
+    focus: true
     title: "MiniStream"
     color: Tokens.background
 
@@ -26,6 +27,19 @@ ApplicationWindow {
         sequence: "F11"
         enabled: !roleController.remoteInputActive
         onActivated: window.toggleFullscreen()
+    }
+
+    Keys.onPressed: function(event) {
+        if (roleController.remoteInputActive && !event.isAutoRepeat) {
+            roleController.routeKey(event.key, true)
+            event.accepted = true
+        }
+    }
+    Keys.onReleased: function(event) {
+        if (roleController.remoteInputActive && !event.isAutoRepeat) {
+            roleController.routeKey(event.key, false)
+            event.accepted = true
+        }
     }
     Shortcut {
         sequence: "Ctrl+Alt+R"

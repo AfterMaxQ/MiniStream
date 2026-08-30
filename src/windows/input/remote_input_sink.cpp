@@ -21,7 +21,22 @@ Result<void, RemoteInputError> RemoteInputSink::inject(const DesktopInput& input
       break;
     case DesktopInputKind::MouseButton:
       event.type = INPUT_MOUSE;
-      event.mi.dwFlags = input.flags;
+      switch (input.flags & ~kDesktopMouseRelease) {
+        case static_cast<std::uint16_t>(DesktopMouseButton::Left):
+          event.mi.dwFlags = (input.flags & kDesktopMouseRelease) ? MOUSEEVENTF_LEFTUP
+                                                                   : MOUSEEVENTF_LEFTDOWN;
+          break;
+        case static_cast<std::uint16_t>(DesktopMouseButton::Right):
+          event.mi.dwFlags = (input.flags & kDesktopMouseRelease) ? MOUSEEVENTF_RIGHTUP
+                                                                   : MOUSEEVENTF_RIGHTDOWN;
+          break;
+        case static_cast<std::uint16_t>(DesktopMouseButton::Middle):
+          event.mi.dwFlags = (input.flags & kDesktopMouseRelease) ? MOUSEEVENTF_MIDDLEUP
+                                                                   : MOUSEEVENTF_MIDDLEDOWN;
+          break;
+        default:
+          return Result<void, RemoteInputError>::err(RemoteInputError::InvalidEvent);
+      }
       break;
     case DesktopInputKind::MouseWheel:
       event.type = INPUT_MOUSE;

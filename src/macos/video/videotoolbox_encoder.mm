@@ -17,6 +17,7 @@ struct VideoToolboxEncoder::Impl {
   CodecConfig codec_config{};
   EncodedFrame latest{};
   bool has_latest{};
+  std::uint32_t next_frame_id{};
   std::mutex mutex;
 };
 
@@ -70,7 +71,7 @@ void output_callback(void* refcon, void*, OSStatus status, VTEncodeInfoFlags,
     keyframe = !CFDictionaryContainsKey(dictionary, kCMSampleAttachmentKey_NotSync);
   }
   std::scoped_lock lock(impl->mutex);
-  impl->latest = {static_cast<std::uint32_t>(impl->latest.frame_id + 1), 0, keyframe,
+  impl->latest = {impl->next_frame_id++, 0, keyframe,
                   std::move(bytes)};
   impl->has_latest = true;
   if (keyframe) {
@@ -151,6 +152,7 @@ Result<EncodedFrame, VideoEncodeError> VideoToolboxEncoder::encode(
   auto result = std::move(impl_->latest);
   impl_->latest = {};
   impl_->has_latest = false;
+  impl_->next_frame_id = 0;
   result.capture_timestamp_us = timestamp_us;
   impl_->codec_config.parameter_sets = result.keyframe ? result.bytes
                                                         : impl_->codec_config.parameter_sets;

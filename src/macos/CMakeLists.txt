@@ -35,15 +35,10 @@ if(MINISTREAM_BUILD_UI)
     PRIVATE ministream_app ministream_macos_platform Qt6::Quick Qt6::Qml Qt6::QuickControls2
   )
   ministream_add_qml_ui(ministream)
-else()
-  add_executable(ministream_client MACOSX_BUNDLE main.mm)
-  target_link_libraries(ministream_client PRIVATE MiniStream::Core SDL3::SDL3)
 endif()
 
 if(MINISTREAM_BUILD_UI)
   ministream_set_warnings(ministream)
-else()
-  ministream_set_warnings(ministream_client)
 endif()
 
 if(MINISTREAM_BUILD_UI)
@@ -56,16 +51,6 @@ if(MINISTREAM_BUILD_UI)
       MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
   )
   install(TARGETS ministream BUNDLE DESTINATION . COMPONENT Runtime)
-else()
-  set_target_properties(
-    ministream_client
-    PROPERTIES
-      MACOSX_BUNDLE_BUNDLE_NAME "MiniStream"
-      MACOSX_BUNDLE_GUI_IDENTIFIER "com.aftermaxq.ministream"
-      MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
-      MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-  )
-  install(TARGETS ministream_client BUNDLE DESTINATION . COMPONENT Runtime)
 endif()
 if(MINISTREAM_BUILD_UI)
   ministream_install_qt_runtime(ministream)

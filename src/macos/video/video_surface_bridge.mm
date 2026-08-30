@@ -2,8 +2,6 @@
 
 namespace ministream {
 
-VideoSurfaceBridge::VideoSurfaceBridge(QObject* parent) : QObject(parent) {}
-
 VideoSurfaceBridge::~VideoSurfaceBridge() {
   std::scoped_lock lock(mutex_);
   if (latest_.pixel_buffer) {
@@ -26,7 +24,6 @@ void VideoSurfaceBridge::publish(CVPixelBufferRef pixel_buffer, std::uint64_t ti
     }
     latest_ = {pixel_buffer, timestamp_us};
   }
-  emit frameAvailableChanged();
 }
 
 std::optional<SurfaceFrame> VideoSurfaceBridge::take() {

@@ -15,6 +15,16 @@ enum class DesktopInputKind : std::uint8_t {
   MouseWheel = 4,
 };
 
+// Mouse buttons use the same small wire representation on every platform.
+// The high bit marks a release; the remaining bits identify the button.
+enum class DesktopMouseButton : std::uint16_t {
+  Left = 1,
+  Right = 2,
+  Middle = 3,
+};
+
+inline constexpr std::uint16_t kDesktopMouseRelease = 0x8000U;
+
 struct DesktopInput {
   DesktopInputKind kind{DesktopInputKind::Key};
   std::uint16_t flags{};
