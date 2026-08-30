@@ -19,6 +19,7 @@
 - Long identity and parameter strings remain inside the card at the minimum window size and after resizing.
 - Existing authenticated pairing, encrypted media, input lease release, and real capability checks remain in force.
 - A ViGEm gamepad is optional; keyboard/mouse control must not be blocked by a missing gamepad driver.
+- In remote mode, Esc and F11 pass through to the remote application; `Ctrl+Alt+R`/`⌘+Option+R` switches input mode and `Ctrl+Alt+F`/`⌘+Option+F` toggles fullscreen.
 - Do not add global input hooks, a new service framework, or permanent role assignments.
 - No subagents; work inline and commit each functional boundary.
 

@@ -46,10 +46,10 @@ docs/           design, implementation plans, and release criteria
 ## Runtime flow
 
 1. Install the Windows host and the macOS client.
-2. Start the host. The first page reports Video, Audio, Controller, and Network readiness.
-3. On the client choose **Find PCs**, select the Windows PC, and choose **Connect**.
+2. On the device to be controlled, confirm Video, Audio, Input, and Network readiness, then choose **Allow control**.
+3. On the other device choose **Find devices**, select the advertised device, and choose **Connect**.
 4. Both devices show the same six-digit pairing code. Confirm only when the codes match on both screens.
-5. Choose **Control remote** when input should be sent to the PC. Choose **Use this Mac** to release keyboard, mouse, and controller routing back to the Mac. **Esc** always releases remote input; it also leaves fullscreen. `Ctrl+Shift+F12` toggles the same input mode.
+5. Choose **Control remote** when input should be sent to the selected device. Choose **Use this device** to return keyboard and mouse routing locally. In remote mode, Esc and F11 go to the game. Use `Ctrl+Alt+R` / `⌘+Option+R` to switch input mode and `Ctrl+Alt+F` / `⌘+Option+F` to toggle fullscreen.
 
 MiniStream is LAN-only in this version. It does not provide Internet/NAT traversal, accounts, cloud services, or multi-controller support.
 
