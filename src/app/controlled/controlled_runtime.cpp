@@ -120,6 +120,8 @@ void ControlledRuntime::stop() noexcept {
   pairing_deadline_.reset();
   confirmation_grace_deadline_.reset();
   next_confirmation_grace_send_.reset();
+  last_authenticated_receive_.reset();
+  last_heartbeat_send_.reset();
   peer_offer_.reset();
   local_offer_.reset();
   session_keys_.reset();
@@ -230,6 +232,8 @@ void ControlledRuntime::finish_streaming(SteadyClock::time_point now) {
   state_ = RoleState::Streaming;
   reset_pairing();
   begin_confirmation_grace(now);
+  last_authenticated_receive_ = now;
+  last_heartbeat_send_.reset();
 }
 
 void ControlledRuntime::begin_confirmation_grace(
@@ -267,6 +271,7 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
     if (const auto common = decode_common_header(bytes.first<kCommonHeaderBytes>());
         common && common->type == PacketType::Input && crypto_) {
       if (const auto payload = crypto_->open(incoming.datagram); payload) {
+        last_authenticated_receive_ = SteadyClock::now();
         if (const auto reliable = decode_reliable_desktop_input(*payload); reliable) {
           for (const auto sequence : reliable_input_receiver_.receive(*reliable)) {
             send_input_ack(sequence);
@@ -289,6 +294,7 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
     if (const auto common = decode_common_header(bytes.first<kCommonHeaderBytes>());
         common && common->type == PacketType::Telemetry && crypto_ && streaming()) {
       if (const auto payload = crypto_->open(incoming.datagram); payload) {
+        last_authenticated_receive_ = SteadyClock::now();
         if (const auto report = decode_feedback_report(*payload); report &&
             (!last_feedback_sequence_ ||
              static_cast<std::int32_t>(report->report_sequence - *last_feedback_sequence_) > 0)) {
@@ -303,11 +309,13 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
   if (bytes.size() >= kCommonHeaderBytes) {
     if (const auto common = decode_common_header(bytes.first<kCommonHeaderBytes>());
         common && common->type == PacketType::Control && crypto_ && streaming()) {
-      if (const auto payload = crypto_->open(incoming.datagram);
-          payload && is_disconnect_control(*payload)) {
-        clear_peer_session();
-      } else if (payload && is_request_keyframe_control(*payload) && backend_) {
-        backend_->request_keyframe();
+      if (const auto payload = crypto_->open(incoming.datagram); payload) {
+        last_authenticated_receive_ = SteadyClock::now();
+        if (is_disconnect_control(*payload)) {
+          clear_peer_session();
+        } else if (is_request_keyframe_control(*payload) && backend_) {
+          backend_->request_keyframe();
+        }
       }
       return;
     }
@@ -552,6 +560,11 @@ void ControlledRuntime::tick() {
     }
     process_datagram(incoming);
   }
+  if (streaming() && last_authenticated_receive_ &&
+      now - *last_authenticated_receive_ >= timing_.liveness_timeout) {
+    clear_peer_session();
+    return;
+  }
   if (pairing() && confirmation_.local_confirmed() && !confirmation_.ready()) {
     if (confirmation_retrier_.due(now)) {
       send_pairing_confirmation(true);
@@ -564,6 +577,7 @@ void ControlledRuntime::tick() {
     return;
   }
   tick_confirmation_grace(now);
+  send_heartbeat(now);
   send_pending_rumble();
   send_pending_video(now);
   send_pending_audio(now);
@@ -593,6 +607,19 @@ void ControlledRuntime::tick() {
 void ControlledRuntime::send_pairing_confirmation(bool accepted) {
   if (session_) {
     session_->reply(encode_pairing_confirmation(accepted));
+  }
+}
+
+void ControlledRuntime::send_heartbeat(SteadyClock::time_point now) {
+  if (!session_ || !crypto_ ||
+      (last_heartbeat_send_ &&
+       now - *last_heartbeat_send_ < timing_.heartbeat_interval)) {
+    return;
+  }
+  const auto payload = encode_heartbeat_control();
+  if (const auto sealed = crypto_->seal(PacketType::Control, payload);
+      sealed && session_->reply(sealed->bytes)) {
+    last_heartbeat_send_ = now;
   }
 }
 
@@ -631,6 +658,8 @@ void ControlledRuntime::clear_peer_session() noexcept {
   peer_handshake_deadline_.reset();
   confirmation_grace_deadline_.reset();
   next_confirmation_grace_send_.reset();
+  last_authenticated_receive_.reset();
+  last_heartbeat_send_.reset();
   ephemeral_.reset();
   last_codec_config_sent_.reset();
   last_codec_config_send_.reset();

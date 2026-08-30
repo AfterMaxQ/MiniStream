@@ -12,6 +12,7 @@ namespace ministream {
 inline constexpr std::byte kDisconnectControlPayload{0xD1};
 inline constexpr std::byte kRequestKeyframeControlPayload{0xD2};
 inline constexpr std::byte kInputAckControlPayload{0xD3};
+inline constexpr std::byte kHeartbeatControlPayload{0xD4};
 
 inline std::array<std::byte, 1> encode_disconnect_control() noexcept {
   return {kDisconnectControlPayload};
@@ -27,6 +28,14 @@ inline std::array<std::byte, 1> encode_request_keyframe_control() noexcept {
 
 inline bool is_request_keyframe_control(std::span<const std::byte> bytes) noexcept {
   return bytes.size() == 1 && bytes.front() == kRequestKeyframeControlPayload;
+}
+
+inline std::array<std::byte, 1> encode_heartbeat_control() noexcept {
+  return {kHeartbeatControlPayload};
+}
+
+inline bool is_heartbeat_control(std::span<const std::byte> bytes) noexcept {
+  return bytes.size() == 1 && bytes.front() == kHeartbeatControlPayload;
 }
 
 inline std::array<std::byte, 5> encode_input_ack_control(ControlSeq sequence) noexcept {

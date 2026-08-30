@@ -116,6 +116,7 @@ class RemoteRuntime {
   std::optional<SteadyClock::time_point> pairing_deadline_;
   std::optional<SteadyClock::time_point> confirmation_grace_deadline_;
   std::optional<SteadyClock::time_point> next_confirmation_grace_send_;
+  std::optional<SteadyClock::time_point> last_authenticated_receive_;
   std::string pairing_code_;
   std::uint64_t selected_min_bitrate_bps_{};
   std::uint64_t selected_max_bitrate_bps_{};

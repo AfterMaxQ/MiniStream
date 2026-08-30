@@ -215,6 +215,7 @@ void RemoteRuntime::finish_streaming() {
   state_ = RoleState::Streaming;
   reset_pairing();
   begin_confirmation_grace(now);
+  last_authenticated_receive_ = now;
 }
 
 void RemoteRuntime::begin_confirmation_grace(
@@ -334,6 +335,7 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
   }
   if (common->type == PacketType::Control) {
     if (const auto payload = crypto_->open(incoming.datagram); payload) {
+      last_authenticated_receive_ = SteadyClock::now();
       if (is_disconnect_control(*payload)) {
         disconnect_session();
       } else if (const auto sequence = decode_input_ack_control(*payload); sequence) {
@@ -349,9 +351,13 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
     if (!codec_configured_) {
       return;
     }
+    const auto received_before = media_receiver_->received_video_packets();
     if (const auto frame = media_receiver_->receive_video(incoming.datagram, SteadyClock::now());
         frame) {
       backend_->decode_video(frame->bytes, frame->capture_timestamp_us);
+    }
+    if (media_receiver_->received_video_packets() > received_before) {
+      last_authenticated_receive_ = SteadyClock::now();
     }
     return;
   }
@@ -362,18 +368,21 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
     if (const auto frame = media_receiver_->receive_video_fec(
             incoming.datagram, SteadyClock::now());
         frame) {
+      last_authenticated_receive_ = SteadyClock::now();
       backend_->decode_video(frame->bytes, frame->capture_timestamp_us);
     }
     return;
   }
   if (common->type == PacketType::Audio) {
     if (const auto packet = media_receiver_->receive_audio(incoming.datagram); packet) {
+      last_authenticated_receive_ = SteadyClock::now();
       audio_jitter_.push(*packet);
     }
     return;
   }
   if (common->type == PacketType::Feedback) {
     if (const auto payload = crypto_->open(incoming.datagram); payload) {
+      last_authenticated_receive_ = SteadyClock::now();
       if (const auto rumble = decode_rumble_packet(*payload); rumble) {
         backend_->play_rumble(rumble->low, rumble->high, rumble->duration_ms);
       }
@@ -499,6 +508,11 @@ void RemoteRuntime::tick() {
     }
   }
   if (!session_) {
+    return;
+  }
+  if (streaming() && last_authenticated_receive_ &&
+      now - *last_authenticated_receive_ >= timing_.liveness_timeout) {
+    disconnect_session();
     return;
   }
   if (state_ == RoleState::RemoteConnecting && handshake_retrier_) {
@@ -686,6 +700,7 @@ void RemoteRuntime::disconnect_session() noexcept {
   pairing_deadline_.reset();
   confirmation_grace_deadline_.reset();
   next_confirmation_grace_send_.reset();
+  last_authenticated_receive_.reset();
   last_keyframe_request_.reset();
   last_feedback_send_.reset();
   feedback_sequence_ = 0;

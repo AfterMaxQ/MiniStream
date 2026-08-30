@@ -21,3 +21,12 @@ TEST_CASE("input acknowledgement carries a stable control sequence") {
   wrong_kind[0] = std::byte{0xFF};
   REQUIRE_FALSE(decode_input_ack_control(wrong_kind).has_value());
 }
+
+TEST_CASE("heartbeat control is distinct from every state-changing control") {
+  const auto heartbeat = encode_heartbeat_control();
+  REQUIRE(heartbeat.size() == 1);
+  REQUIRE(is_heartbeat_control(heartbeat));
+  REQUIRE_FALSE(is_disconnect_control(heartbeat));
+  REQUIRE_FALSE(is_request_keyframe_control(heartbeat));
+  REQUIRE_FALSE(decode_input_ack_control(heartbeat).has_value());
+}

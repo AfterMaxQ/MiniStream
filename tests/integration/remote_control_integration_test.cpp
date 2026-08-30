@@ -226,9 +226,14 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
   discovery_config.retry_interval = 50ms;
   discovery_config.target_override = {{127, 0, 0, 1}};
 
+  SessionTiming session_timing;
+  session_timing.heartbeat_interval = 20ms;
+  session_timing.liveness_timeout = 250ms;
+
   auto controlled_backend = std::make_unique<LoopbackControlledBackend>();
   auto* controlled_backend_ptr = controlled_backend.get();
-  ControlledRuntime controlled(std::move(controlled_backend), advertisement(), discovery_config);
+  ControlledRuntime controlled(std::move(controlled_backend), advertisement(),
+                               discovery_config, session_timing);
   std::vector<StreamSnapshot> controlled_snapshots;
   controlled.set_telemetry_callback(
       [&](const StreamSnapshot& snapshot) { controlled_snapshots.push_back(snapshot); });
@@ -238,7 +243,8 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
   auto remote_backend = std::make_unique<LoopbackRemoteBackend>();
   auto* remote_backend_ptr = remote_backend.get();
   remote_backend_ptr->reject_first_codec_config = true;
-  RemoteRuntime remote(std::move(remote_backend), discovery_config);
+  RemoteRuntime remote(std::move(remote_backend), discovery_config,
+                       DiscoveryInterfaceProvider{}, session_timing);
   std::vector<StreamSnapshot> remote_snapshots;
   remote.set_telemetry_callback(
       [&](const StreamSnapshot& snapshot) { remote_snapshots.push_back(snapshot); });
@@ -313,7 +319,9 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
   REQUIRE(remote_backend_ptr->codec_config_attempts >= 2U);
   REQUIRE(remote_backend_ptr->last_video_timestamp != 0);
 
-  pump(controlled, remote, 140);
+  pump(controlled, remote, 350);
+  REQUIRE(controlled.streaming());
+  REQUIRE(remote.streaming());
   REQUIRE_FALSE(controlled_snapshots.empty());
   REQUIRE_FALSE(remote_snapshots.empty());
   REQUIRE(controlled_snapshots.back().bitrate_bps != 0);
@@ -465,9 +473,13 @@ TEST_CASE("controlled pairing survives retry exhaustion and converges in grace")
   timing.confirmation_retry_interval = 1ms;
   timing.confirmation_grace = 500ms;
   timing.confirmation_grace_interval = 5ms;
+  timing.heartbeat_interval = 5ms;
+  timing.liveness_timeout = 80ms;
 
-  ControlledRuntime controlled(std::make_unique<LoopbackControlledBackend>(),
-                               advertisement(), discovery_config, timing);
+  auto controlled_backend = std::make_unique<LoopbackControlledBackend>();
+  auto* controlled_backend_ptr = controlled_backend.get();
+  ControlledRuntime controlled(std::move(controlled_backend), advertisement(),
+                               discovery_config, timing);
   REQUIRE(controlled.start());
 
   UdpEndpoint controller;
@@ -527,6 +539,16 @@ TEST_CASE("controlled pairing survives retry exhaustion and converges in grace")
         const auto accepted = decode_pairing_confirmation(bytes);
         return accepted && *accepted;
       }));
+
+  const auto clear_input_before_timeout = controlled_backend_ptr->clear_input_calls;
+  const auto clear_gamepad_before_timeout = controlled_backend_ptr->clear_gamepad_calls;
+  for (unsigned attempt = 0; attempt < 120U && controlled.streaming(); ++attempt) {
+    controlled.tick();
+    std::this_thread::sleep_for(1ms);
+  }
+  REQUIRE(controlled.state() == RoleState::Broadcasting);
+  REQUIRE(controlled_backend_ptr->clear_input_calls == clear_input_before_timeout + 1U);
+  REQUIRE(controlled_backend_ptr->clear_gamepad_calls == clear_gamepad_before_timeout + 1U);
 }
 
 TEST_CASE("controlled runtime expires an abandoned human pairing") {
@@ -586,6 +608,8 @@ TEST_CASE("remote pairing replies during post-confirmation grace") {
   timing.confirmation_retry_interval = 1ms;
   timing.confirmation_grace = 500ms;
   timing.confirmation_grace_interval = 5ms;
+  timing.heartbeat_interval = 5ms;
+  timing.liveness_timeout = 80ms;
 
   DiscoveryHost discovery_host;
   REQUIRE(discovery_host.start(discovery_config));
@@ -594,7 +618,9 @@ TEST_CASE("remote pairing replies during post-confirmation grace") {
   auto peer_advertisement = advertisement();
   peer_advertisement.session_port = controlled_peer.local_port();
 
-  RemoteRuntime remote(std::make_unique<LoopbackRemoteBackend>(), discovery_config,
+  auto remote_backend = std::make_unique<LoopbackRemoteBackend>();
+  auto* remote_backend_ptr = remote_backend.get();
+  RemoteRuntime remote(std::move(remote_backend), discovery_config,
                        DiscoveryInterfaceProvider{}, timing);
   REQUIRE(remote.start());
   REQUIRE(remote.begin_discovery(80ms));
@@ -654,4 +680,12 @@ TEST_CASE("remote pairing replies during post-confirmation grace") {
         const auto accepted = decode_pairing_confirmation(bytes);
         return accepted && *accepted;
       }));
+
+  const auto rumble_clear_before_timeout = remote_backend_ptr->rumble_clear_calls;
+  for (unsigned attempt = 0; attempt < 120U && remote.streaming(); ++attempt) {
+    remote.tick();
+    std::this_thread::sleep_for(1ms);
+  }
+  REQUIRE(remote.state() == RoleState::RemoteBrowsing);
+  REQUIRE(remote_backend_ptr->rumble_clear_calls == rumble_clear_before_timeout + 1U);
 }
