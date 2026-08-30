@@ -116,6 +116,7 @@ void HostController::stopHost() {
   capture_.reset();
   identity_.reset();
   ephemeral_.reset();
+  session_keys_.reset();
   resetPairing();
   if (hosting_) {
     hosting_ = false;

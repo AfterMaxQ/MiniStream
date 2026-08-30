@@ -193,8 +193,9 @@ Result<void, VideoDecodeError> VideoToolboxDecoder::decode(
   if (sample_status != noErr) {
     return Result<void, VideoDecodeError>::err(VideoDecodeError::Decode);
   }
-  const auto status = VTDecompressionSessionDecodeFrame(impl_->session, sample,
-                                                        kVTDecodeFrame_EnableAsynchronousDecompression,
+  // Run the callback before returning so the bridge can publish only the
+  // newest frame and never queue an unbounded decoded-frame backlog.
+  const auto status = VTDecompressionSessionDecodeFrame(impl_->session, sample, 0,
                                                         nullptr, nullptr);
   CFRelease(sample);
   return status == noErr ? Result<void, VideoDecodeError>::ok()

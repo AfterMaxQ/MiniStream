@@ -292,6 +292,7 @@ void ClientController::disconnectSession() {
   video_decoder_.reset();
   video_surface_.reset();
   expected_audio_sequence_ = 0;
+  session_keys_.reset();
   session_.reset();
   const bool was_connected = connected_;
   connected_ = false;
