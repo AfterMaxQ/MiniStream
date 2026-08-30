@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/base/result.hpp"
+#include "core/audio/pcm_block.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -9,13 +10,6 @@
 namespace ministream {
 
 enum class AudioCaptureError { Initialize, UnsupportedFormat, Start, NoData, Read };
-
-struct PcmBlock {
-  std::uint64_t host_timestamp_us{};
-  std::uint32_t frames{};
-  std::vector<float> interleaved_stereo;
-  bool discontinuity{};
-};
 
 class WasapiLoopback {
  public:

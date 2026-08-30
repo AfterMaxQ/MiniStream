@@ -37,9 +37,10 @@ add_executable(
   config/stream_profile_test.cpp
   video/codec_config_wire_test.cpp
   session/discovery_test.cpp
+  session/controlled_runtime_test.cpp
   security/pairing_wire_test.cpp
 )
-target_link_libraries(ministream_tests PRIVATE MiniStream::Core Catch2::Catch2WithMain)
+target_link_libraries(ministream_tests PRIVATE ministream_app MiniStream::Core Catch2::Catch2WithMain)
 target_include_directories(ministream_tests PRIVATE "${PROJECT_SOURCE_DIR}/tools")
 ministream_set_warnings(ministream_tests)
 

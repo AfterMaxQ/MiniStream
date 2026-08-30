@@ -105,6 +105,7 @@ class ControlledBackend {
   virtual bool start() = 0;
   virtual void stop() noexcept = 0;
   virtual std::optional<EncodedFrame> next_video() = 0;
+  virtual CodecConfig codec_config() const = 0;
   virtual std::optional<PcmBlock> next_audio() = 0;
   virtual bool inject_input(const DesktopInput&) = 0;
 };

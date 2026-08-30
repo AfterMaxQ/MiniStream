@@ -21,6 +21,7 @@ if(MINISTREAM_BUILD_UI)
 endif()
 
 add_subdirectory(src/core)
+add_subdirectory(src/app)
 
 if(WIN32)
   add_subdirectory(src/windows)
