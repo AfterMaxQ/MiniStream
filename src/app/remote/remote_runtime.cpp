@@ -601,17 +601,25 @@ void RemoteRuntime::play_audio(SteadyClock::time_point now) {
     return;
   }
 
-  const auto playout = audio_jitter_.pop(expected_audio_sequence_);
-  if (playout.kind == AudioPlayoutKind::Packet && playout.packet) {
-    if (const auto samples = audio_decoder_->decode(playout.packet->opus); samples) {
+  constexpr auto kAudioPlayoutInterval = std::chrono::milliseconds{10};
+  constexpr unsigned kMaxCatchUpFrames = 4;
+  unsigned frames{};
+  while (frames < kMaxCatchUpFrames && now >= *next_audio_playout_) {
+    const auto playout = audio_jitter_.pop(expected_audio_sequence_);
+    if (playout.kind == AudioPlayoutKind::Packet && playout.packet) {
+      if (const auto samples = audio_decoder_->decode(playout.packet->opus); samples) {
+        backend_->play_audio(*samples);
+      }
+    } else if (const auto samples = audio_decoder_->decode_loss(); samples) {
       backend_->play_audio(*samples);
     }
-  } else if (const auto samples = audio_decoder_->decode_loss(); samples) {
-    backend_->play_audio(*samples);
+    ++expected_audio_sequence_;
+    *next_audio_playout_ += kAudioPlayoutInterval;
+    ++frames;
   }
-  ++expected_audio_sequence_;
-  constexpr auto kAudioPlayoutInterval = std::chrono::milliseconds{10};
-  *next_audio_playout_ += kAudioPlayoutInterval;
+  if (now >= *next_audio_playout_) {
+    *next_audio_playout_ = now + kAudioPlayoutInterval;
+  }
 }
 
 void RemoteRuntime::send_feedback(SteadyClock::time_point now) {

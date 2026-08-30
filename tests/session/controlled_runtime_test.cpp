@@ -16,6 +16,9 @@ class FakeControlledBackend final : public ControlledBackend {
   ControlledCapabilities inspect() const override { return capabilities_; }
   bool start() override {
     ++start_calls;
+    if (capabilities_after_start) {
+      capabilities_ = *capabilities_after_start;
+    }
     return start_result;
   }
   void stop() noexcept override { ++stop_calls; }
@@ -26,6 +29,7 @@ class FakeControlledBackend final : public ControlledBackend {
   void clear_gamepad() noexcept override { ++clear_gamepad_calls; }
 
   ControlledCapabilities capabilities_;
+  std::optional<ControlledCapabilities> capabilities_after_start;
   bool start_result{true};
   unsigned start_calls{};
   unsigned stop_calls{};
@@ -98,4 +102,18 @@ TEST_CASE("controlled runtime refreshes its advertisement before starting") {
   REQUIRE(runtime.start());
   REQUIRE_FALSE(runtime.set_advertisement(advertisement()));
   runtime.stop();
+}
+
+TEST_CASE("controlled runtime advertises capabilities proven after backend start") {
+  auto backend = std::make_unique<FakeControlledBackend>(ready_capabilities());
+  auto* backend_ptr = backend.get();
+  auto active = ready_capabilities();
+  active.hevc = false;
+  backend_ptr->capabilities_after_start = active;
+
+  auto initial_advertisement = advertisement();
+  initial_advertisement.capabilities.hevc = true;
+  ControlledRuntime runtime(std::move(backend), initial_advertisement);
+  REQUIRE(runtime.start());
+  REQUIRE_FALSE(runtime.advertisement().capabilities.hevc);
 }

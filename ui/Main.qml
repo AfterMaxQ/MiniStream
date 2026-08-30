@@ -16,6 +16,11 @@ ApplicationWindow {
         roleController.releaseRemoteInput()
         roleController.disconnect()
     }
+    onActiveChanged: {
+        if (!active && roleController.remoteInputActive) {
+            roleController.releaseRemoteInput()
+        }
+    }
 
     function toggleFullscreen() {
         window.visibility = window.visibility === Window.FullScreen
@@ -33,13 +38,15 @@ ApplicationWindow {
         onActivated: window.visibility = Window.Windowed
     }
     Shortcut {
-        sequence: "Ctrl+Alt+R"
-        enabled: Qt.platform.os !== "osx" && !roleController.remoteInputActive
+        sequence: "Ctrl+Alt+Shift+R"
+        enabled: Qt.platform.os !== "osx"
+                 && roleController.mode === 2 && roleController.connected
         onActivated: roleController.toggleRemoteInput()
     }
     Shortcut {
-        sequence: "Meta+Alt+R"
-        enabled: Qt.platform.os === "osx" && !roleController.remoteInputActive
+        sequence: "Meta+Alt+Shift+R"
+        enabled: Qt.platform.os === "osx"
+                 && roleController.mode === 2 && roleController.connected
         onActivated: roleController.toggleRemoteInput()
     }
 
@@ -139,7 +146,13 @@ ApplicationWindow {
     StreamPage {
         anchors.fill: parent
         controller: roleController
-        visible: roleController.connected
+        visible: roleController.connected && roleController.mode === 2
+    }
+
+    ControlledActivePage {
+        anchors.fill: parent
+        controller: roleController
+        visible: roleController.connected && roleController.mode === 1
     }
 
 }

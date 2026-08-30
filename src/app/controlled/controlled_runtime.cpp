@@ -60,6 +60,27 @@ bool ControlledRuntime::start() {
     backend_->stop();
     return false;
   }
+  const auto active_capabilities = inspect();
+  if (!active_capabilities.ready()) {
+    stop();
+    return false;
+  }
+  advertisement_.capabilities = {
+      active_capabilities.h264, active_capabilities.hevc,
+      active_capabilities.hdr10, active_capabilities.audio.ready,
+      active_capabilities.input.ready, active_capabilities.optional_gamepad.ready};
+  if (active_capabilities.max_width != 0) {
+    advertisement_.max_width = static_cast<std::uint16_t>(std::min<std::uint32_t>(
+        active_capabilities.max_width, std::numeric_limits<std::uint16_t>::max()));
+  }
+  if (active_capabilities.max_height != 0) {
+    advertisement_.max_height = static_cast<std::uint16_t>(std::min<std::uint32_t>(
+        active_capabilities.max_height, std::numeric_limits<std::uint16_t>::max()));
+  }
+  if (active_capabilities.max_fps != 0) {
+    advertisement_.max_fps = static_cast<std::uint16_t>(std::min<std::uint32_t>(
+        active_capabilities.max_fps, std::numeric_limits<std::uint16_t>::max()));
+  }
   backend_->set_rumble_sender(
       [this](const RumblePacket& packet) { send_rumble(packet); });
 
@@ -80,6 +101,7 @@ bool ControlledRuntime::start() {
     return false;
   }
   advertisement_.controllable = true;
+  last_discovery_error_.reset();
   state_ = RoleState::Broadcasting;
   return true;
 }
@@ -112,6 +134,7 @@ void ControlledRuntime::stop() noexcept {
   gamepad_sequence_filter_ = GamepadSequenceFilter{};
   reliable_input_receiver_.reset();
   discovery_.reset();
+  last_discovery_error_.reset();
   session_.reset();
   identity_.reset();
   ephemeral_.reset();
@@ -153,6 +176,10 @@ const std::string& ControlledRuntime::pairing_code() const noexcept { return pai
 
 const DiscoveryAdvertisement& ControlledRuntime::advertisement() const noexcept {
   return advertisement_;
+}
+
+std::optional<DiscoveryError> ControlledRuntime::last_discovery_error() const noexcept {
+  return last_discovery_error_;
 }
 
 bool ControlledRuntime::set_advertisement(DiscoveryAdvertisement advertisement) {
@@ -552,7 +579,12 @@ void ControlledRuntime::tick() {
     return;
   }
   if (state_ == RoleState::Broadcasting && !session_->peer_locked()) {
-    (void)discovery_->poll(advertisement_);
+    const auto result = discovery_->poll(advertisement_);
+    if (result) {
+      last_discovery_error_.reset();
+    } else {
+      last_discovery_error_ = result.error();
+    }
   }
   for (const auto& incoming : session_->try_receive_batch(512)) {
     if (session_->peer_locked() && !session_->matches_peer(incoming)) {

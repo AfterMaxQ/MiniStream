@@ -20,3 +20,18 @@ TEST_CASE("Windows controlled backend can be stopped before it starts") {
   REQUIRE_FALSE(backend.next_video().has_value());
   REQUIRE_FALSE(backend.next_audio().has_value());
 }
+
+TEST_CASE("Windows controlled backend preflights advertised codecs", "[.hardware]") {
+  WindowsControlledBackend backend;
+  if (!backend.start()) {
+    SKIP("Controlled hardware backend is not available");
+  }
+  const auto capabilities = backend.inspect();
+  REQUIRE(capabilities.h264);
+  REQUIRE(backend.configure_video(
+      {VideoCodec::H264, 1920, 1080, 60, false, {}}));
+  if (capabilities.hevc) {
+    REQUIRE(backend.configure_video(
+        {VideoCodec::Hevc, 1920, 1080, 60, false, {}}));
+  }
+}

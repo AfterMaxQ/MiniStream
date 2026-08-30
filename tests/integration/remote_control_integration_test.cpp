@@ -319,6 +319,12 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
   REQUIRE(remote_backend_ptr->codec_config_attempts >= 2U);
   REQUIRE(remote_backend_ptr->last_video_timestamp != 0);
 
+  const auto audio_before_stall = remote_backend_ptr->played_audio.size();
+  std::this_thread::sleep_for(50ms);
+  remote.tick();
+  REQUIRE(remote_backend_ptr->played_audio.size() >=
+          audio_before_stall + kOpusFrameSamplesPerChannel * 2U * 4U);
+
   pump(controlled, remote, 350);
   REQUIRE(controlled.streaming());
   REQUIRE(remote.streaming());

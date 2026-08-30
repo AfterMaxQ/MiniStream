@@ -281,6 +281,18 @@ QString RoleController::deviceLabel() const {
 
 QString RoleController::broadcastStatus() const {
 #if defined(_WIN32) || defined(__APPLE__)
+  if (controlled_ && controlled_->last_discovery_error()) {
+    switch (*controlled_->last_discovery_error()) {
+      case DiscoveryError::PermissionDenied:
+        return QStringLiteral("Local network access is blocked in system settings");
+      case DiscoveryError::NoUsableInterface:
+        return QStringLiteral("No usable network interface is available");
+      case DiscoveryError::Bind:
+      case DiscoveryError::Send:
+      case DiscoveryError::Receive:
+        return QStringLiteral("Local network discovery is unavailable");
+    }
+  }
   return broadcasting() ? QStringLiteral("Visible on local network")
                         : QStringLiteral("Not visible on local network");
 #else
@@ -467,6 +479,7 @@ void RoleController::startBroadcast() {
   if (!controlled_->start()) {
     failure_text_ = QStringLiteral("Unable to start control broadcast.");
   } else {
+    controlled_capabilities_ = controlled_->inspect();
     failure_text_.clear();
   }
   emit stateChanged();

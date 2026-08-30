@@ -25,6 +25,9 @@ struct WindowsControlledBackend::Impl {
   std::uint32_t bitrate_bps{20'000'000};
   bool started{};
   bool configured{};
+  bool codec_support_probed{};
+  bool h264_supported{};
+  bool hevc_supported{};
   std::function<void(const RumblePacket&)> rumble_sender;
 };
 
@@ -33,13 +36,15 @@ WindowsControlledBackend::~WindowsControlledBackend() { stop(); }
 
 ControlledCapabilities WindowsControlledBackend::inspect() const {
   const auto host = inspect_host_capabilities();
+  const auto h264 = impl_->codec_support_probed ? impl_->h264_supported : host.h264;
+  const auto hevc = impl_->codec_support_probed ? impl_->hevc_supported : host.hevc;
   return {{host.video.ready, host.video.detail},
           {host.audio.ready, host.audio.detail},
           {host.input.ready, host.input.detail},
           {host.network.ready, host.network.detail},
           {host.controller.ready, host.controller.detail},
-          host.h264,
-          host.hevc,
+          h264,
+          hevc,
           host.hdr10,
           host.max_width,
           host.max_height,
@@ -67,6 +72,22 @@ bool WindowsControlledBackend::start() {
         impl_->rumble_sender({state.low, state.high, 100});
       }
     });
+  }
+  const auto host = inspect_host_capabilities();
+  const auto probe_width = std::max(1U, std::min(host.max_width, 1920U));
+  const auto probe_height = std::max(1U, std::min(host.max_height, 1080U));
+  const auto supports = [&](VideoCodec codec) {
+    NvencEncoder probe;
+    return static_cast<bool>(probe.initialize(
+        impl_->capture->device(), impl_->capture->context(),
+        {codec, probe_width, probe_height, 60, 20'000'000, false}));
+  };
+  impl_->h264_supported = supports(VideoCodec::H264);
+  impl_->hevc_supported = supports(VideoCodec::Hevc);
+  impl_->codec_support_probed = true;
+  if (!impl_->h264_supported) {
+    stop();
+    return false;
   }
   impl_->encoder = std::make_unique<NvencEncoder>();
   impl_->requested = {};
@@ -99,6 +120,9 @@ void WindowsControlledBackend::stop() noexcept {
   impl_->active = {};
   impl_->bitrate_bps = 20'000'000;
   impl_->configured = false;
+  impl_->codec_support_probed = false;
+  impl_->h264_supported = false;
+  impl_->hevc_supported = false;
   impl_->started = false;
 }
 
@@ -107,15 +131,22 @@ bool WindowsControlledBackend::configure_video(const CodecConfig& config) {
       (config.codec != VideoCodec::H264 && config.codec != VideoCodec::Hevc) || config.hdr10) {
     return false;
   }
-  impl_->requested = config;
-  impl_->configured = true;
-  // The source adapter has no scaler, so it preserves the capture dimensions
-  // when the first frame arrives.  The requested codec/fps/bitrate remain in
-  // effect and the emitted CodecConfig reports the actual dimensions.
-  if (impl_->encoder) {
-    impl_->encoder->stop();
+  if (!impl_->encoder) {
+    return false;
   }
-  impl_->active = {};
+  impl_->encoder->stop();
+  const NvencConfig encoder_config{config.codec, config.width, config.height,
+                                   config.fps, impl_->bitrate_bps, false};
+  if (!impl_->encoder->initialize(impl_->capture->device(), impl_->capture->context(),
+                                  encoder_config)) {
+    impl_->configured = false;
+    impl_->requested = {};
+    impl_->active = {};
+    return false;
+  }
+  impl_->requested = config;
+  impl_->active = impl_->encoder->codec_config();
+  impl_->configured = true;
   return true;
 }
 

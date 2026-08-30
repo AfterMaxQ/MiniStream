@@ -50,6 +50,7 @@ class ControlledRuntime {
   [[nodiscard]] RoleState state() const noexcept;
   [[nodiscard]] const std::string& pairing_code() const noexcept;
   [[nodiscard]] const DiscoveryAdvertisement& advertisement() const noexcept;
+  [[nodiscard]] std::optional<DiscoveryError> last_discovery_error() const noexcept;
   bool set_advertisement(DiscoveryAdvertisement advertisement);
   void set_telemetry_callback(std::function<void(const StreamSnapshot&)> callback);
 
@@ -80,6 +81,7 @@ class ControlledRuntime {
   SessionTiming timing_;
   RoleState state_{RoleState::Idle};
   std::unique_ptr<DiscoveryHost> discovery_;
+  std::optional<DiscoveryError> last_discovery_error_;
   std::unique_ptr<UdpEndpoint> session_;
   std::unique_ptr<PacketScheduler> scheduler_;
   std::unique_ptr<SessionCrypto> crypto_;
