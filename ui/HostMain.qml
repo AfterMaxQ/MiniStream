@@ -18,6 +18,18 @@ ApplicationWindow {
                      ? Window.Windowed : Window.FullScreen
     }
     Shortcut {
+        sequence: "Ctrl+Alt+F"
+        enabled: Qt.platform.os !== "osx"
+        onActivated: window.visibility = window.visibility === Window.FullScreen
+                     ? Window.Windowed : Window.FullScreen
+    }
+    Shortcut {
+        sequence: "Meta+Alt+F"
+        enabled: Qt.platform.os === "osx"
+        onActivated: window.visibility = window.visibility === Window.FullScreen
+                     ? Window.Windowed : Window.FullScreen
+    }
+    Shortcut {
         sequence: "Esc"
         enabled: window.visibility === Window.FullScreen
         onActivated: window.visibility = Window.Windowed

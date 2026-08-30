@@ -14,23 +14,40 @@ ApplicationWindow {
 
     onClosing: clientController.releaseRemoteInput()
 
+    function toggleFullscreen() {
+        window.visibility = window.visibility === Window.FullScreen
+                           ? Window.Windowed : Window.FullScreen
+    }
+
     Shortcut {
         sequence: "F11"
-        onActivated: window.visibility = window.visibility === Window.FullScreen
-                     ? Window.Windowed : Window.FullScreen
+        enabled: !clientController.remoteInputActive
+        onActivated: window.toggleFullscreen()
     }
     Shortcut {
-        sequence: "Ctrl+Shift+F12"
+        sequence: "Ctrl+Alt+R"
+        enabled: Qt.platform.os !== "osx"
         onActivated: clientController.toggleRemoteInput()
     }
     Shortcut {
+        sequence: "Meta+Alt+R"
+        enabled: Qt.platform.os === "osx"
+        onActivated: clientController.toggleRemoteInput()
+    }
+    Shortcut {
+        sequence: "Ctrl+Alt+F"
+        enabled: Qt.platform.os !== "osx"
+        onActivated: window.toggleFullscreen()
+    }
+    Shortcut {
+        sequence: "Meta+Alt+F"
+        enabled: Qt.platform.os === "osx"
+        onActivated: window.toggleFullscreen()
+    }
+    Shortcut {
         sequence: "Esc"
-        onActivated: {
-            clientController.releaseRemoteInput()
-            if (window.visibility === Window.FullScreen) {
-                window.visibility = Window.Windowed
-            }
-        }
+        enabled: !clientController.remoteInputActive && window.visibility === Window.FullScreen
+        onActivated: window.visibility = Window.Windowed
     }
 
     Loader {
