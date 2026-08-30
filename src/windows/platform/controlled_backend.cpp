@@ -28,6 +28,7 @@ struct WindowsControlledBackend::Impl {
   bool codec_support_probed{};
   bool h264_supported{};
   bool hevc_supported{};
+  std::string last_start_error;
   std::function<void(const RumblePacket&)> rumble_sender;
 };
 
@@ -36,25 +37,29 @@ WindowsControlledBackend::~WindowsControlledBackend() { stop(); }
 
 ControlledCapabilities WindowsControlledBackend::inspect() const {
   const auto host = inspect_host_capabilities();
+  const PlatformCapability video = impl_->last_start_error.empty()
+                                       ? PlatformCapability{host.video.ready, host.video.detail}
+                                       : PlatformCapability{false, impl_->last_start_error};
   const auto h264 = impl_->codec_support_probed ? impl_->h264_supported : host.h264;
   const auto hevc = impl_->codec_support_probed ? impl_->hevc_supported : host.hevc;
-  return {{host.video.ready, host.video.detail},
+  return {video,
           {host.audio.ready, host.audio.detail},
           {host.input.ready, host.input.detail},
           {host.network.ready, host.network.detail},
           {host.controller.ready, host.controller.detail},
-          h264,
-          hevc,
+          video.ready && h264,
+          video.ready && hevc,
           host.hdr10,
-          host.max_width,
-          host.max_height,
-          host.max_fps};
+          video.ready ? host.max_width : 0U,
+          video.ready ? host.max_height : 0U,
+          video.ready ? host.max_fps : 0U};
 }
 
 bool WindowsControlledBackend::start() {
   if (impl_->started) {
     return true;
   }
+  impl_->last_start_error.clear();
   impl_->capture = std::make_unique<DxgiCapture>();
   impl_->audio = std::make_unique<WasapiLoopback>();
   impl_->input = std::make_unique<RemoteInputSink>();
@@ -87,6 +92,12 @@ bool WindowsControlledBackend::start() {
   impl_->codec_support_probed = true;
   if (!impl_->h264_supported) {
     stop();
+    return false;
+  }
+  if (impl_->capture->format() != DXGI_FORMAT_B8G8R8A8_UNORM) {
+    stop();
+    impl_->last_start_error =
+        "Windows HDR capture is not supported yet; turn off HDR for this display";
     return false;
   }
   impl_->encoder = std::make_unique<NvencEncoder>();

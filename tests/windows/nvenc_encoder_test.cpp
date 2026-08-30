@@ -17,8 +17,13 @@ TEST_CASE("NVENC encodes one captured BGRA frame", "[.hardware]") {
   REQUIRE(encoder.initialize(capture.device(), capture.context(),
                              {VideoCodec::H264, frame->width, frame->height, 60,
                               20'000'000, false}));
+  if (frame->format != DXGI_FORMAT_B8G8R8A8_UNORM) {
+    SKIP("Windows HDR desktop capture is outside the SDR encoder contract");
+  }
   const auto encoded = encoder.encode(
       *frame, static_cast<std::uint64_t>(frame->frame_id), true);
+  INFO("NVENC encode error=" << (encoded ? -1 : static_cast<int>(encoded.error()))
+                              << " DXGI format=" << static_cast<int>(frame->format));
   REQUIRE(encoded);
   REQUIRE(encoded->keyframe);
   REQUIRE_FALSE(encoded->bytes.empty());

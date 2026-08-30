@@ -204,4 +204,13 @@ ID3D11DeviceContext* DxgiCapture::context() const noexcept {
   return impl_ ? impl_->context.Get() : nullptr;
 }
 
+DXGI_FORMAT DxgiCapture::format() const noexcept {
+  if (!impl_ || !impl_->duplication) {
+    return DXGI_FORMAT_UNKNOWN;
+  }
+  DXGI_OUTDUPL_DESC description{};
+  impl_->duplication->GetDesc(&description);
+  return description.ModeDesc.Format;
+}
+
 }  // namespace ministream

@@ -46,6 +46,7 @@ class DxgiCapture {
   // capture object is destroyed or moved from.
   [[nodiscard]] ID3D11Device* device() const noexcept;
   [[nodiscard]] ID3D11DeviceContext* context() const noexcept;
+  [[nodiscard]] DXGI_FORMAT format() const noexcept;
 
  private:
   struct Impl;

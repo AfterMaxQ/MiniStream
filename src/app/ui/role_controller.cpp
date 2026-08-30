@@ -477,7 +477,10 @@ void RoleController::startBroadcast() {
     return;
   }
   if (!controlled_->start()) {
-    failure_text_ = QStringLiteral("Unable to start control broadcast.");
+    controlled_capabilities_ = controlled_->inspect();
+    failure_text_ = controlled_capabilities_.video.detail.empty()
+                        ? QStringLiteral("Unable to start control broadcast.")
+                        : QString::fromStdString(controlled_capabilities_.video.detail);
   } else {
     controlled_capabilities_ = controlled_->inspect();
     failure_text_.clear();
