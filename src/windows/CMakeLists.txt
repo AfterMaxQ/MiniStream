@@ -1,6 +1,7 @@
 add_library(
   ministream_windows_platform
   STATIC
+  platform/controlled_backend.cpp
   platform/host_capabilities.cpp
   video/dxgi_capture.cpp
   video/nvenc_encoder.cpp
@@ -31,6 +32,8 @@ if(MINISTREAM_BUILD_UI)
     "${PROJECT_SOURCE_DIR}/src/app/qt_main.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.hpp"
+    platform/controlled_backend.cpp
+    platform/controlled_backend.hpp
     ui/host_controller.cpp
     ui/host_controller.hpp
   )

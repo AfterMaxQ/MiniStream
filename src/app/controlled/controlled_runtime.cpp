@@ -163,6 +163,11 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
   }
 
   if (const auto hello = decode_hello(bytes); hello && session_) {
+    if (!backend_ || !backend_->configure_video(
+                         {hello->codec, hello->width, hello->height, hello->fps,
+                          false, {}})) {
+      return;
+    }
     negotiated_codec_ = hello->codec;
     negotiated_width_ = hello->width;
     negotiated_height_ = hello->height;

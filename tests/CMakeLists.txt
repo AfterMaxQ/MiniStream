@@ -50,6 +50,7 @@ if(WIN32)
     ministream_tests
     PRIVATE
       windows/host_capabilities_test.cpp
+      windows/controlled_backend_test.cpp
       windows/dxgi_capture_test.cpp
       windows/wasapi_loopback_test.cpp
       windows/nvenc_encoder_test.cpp
