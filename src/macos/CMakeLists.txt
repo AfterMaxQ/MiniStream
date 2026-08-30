@@ -42,6 +42,11 @@ if(MINISTREAM_BUILD_UI)
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.hpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.mm"
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.hpp"
+    "${PROJECT_SOURCE_DIR}/assets/icons/ministream.icns"
+  )
+  set_source_files_properties(
+    "${PROJECT_SOURCE_DIR}/assets/icons/ministream.icns"
+    PROPERTIES MACOSX_PACKAGE_LOCATION Resources
   )
   target_link_libraries(
     ministream
@@ -62,6 +67,7 @@ if(MINISTREAM_BUILD_UI)
       MACOSX_BUNDLE_GUI_IDENTIFIER "com.aftermaxq.ministream"
       MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
       MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+      MACOSX_BUNDLE_ICON_FILE "ministream.icns"
   )
   install(TARGETS ministream BUNDLE DESTINATION . COMPONENT Runtime)
 endif()

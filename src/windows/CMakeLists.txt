@@ -42,6 +42,7 @@ if(MINISTREAM_BUILD_UI)
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.hpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/windows_video_surface_bridge.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/windows_video_surface_bridge.hpp"
+    "${PROJECT_SOURCE_DIR}/assets/icons/ministream.rc"
   )
   target_link_libraries(
     ministream
