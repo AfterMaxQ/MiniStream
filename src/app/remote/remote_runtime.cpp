@@ -311,26 +311,6 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
   if (common->type == PacketType::Audio) {
     if (const auto packet = media_receiver_->receive_audio(incoming.datagram); packet) {
       audio_jitter_.push(*packet);
-      // A single missing audio packet must not permanently stall playout.
-      // Advance through a bounded run of missing sequence numbers, then stop
-      // after the first real packet so future packets remain buffered.
-      for (unsigned attempt = 0; attempt < 8U; ++attempt) {
-        const auto playout = audio_jitter_.pop(expected_audio_sequence_);
-        if (playout.kind == AudioPlayoutKind::Plc) {
-          if (const auto samples = audio_decoder_->decode_loss(); samples) {
-            backend_->play_audio(*samples);
-          }
-          ++expected_audio_sequence_;
-          continue;
-        }
-        if (playout.packet) {
-          ++expected_audio_sequence_;
-          if (const auto samples = audio_decoder_->decode(playout.packet->opus); samples) {
-            backend_->play_audio(*samples);
-          }
-        }
-        break;
-      }
     }
     return;
   }
@@ -433,7 +413,11 @@ void RemoteRuntime::tick() {
     return;
   }
   if (media_receiver_) {
+    const auto unrecoverable_before = media_receiver_->fec_unrecoverable_frames();
     media_receiver_->expire_video(now);
+    if (media_receiver_->fec_unrecoverable_frames() > unrecoverable_before) {
+      request_keyframe(now);
+    }
   }
   if (state_ == RoleState::RemoteConnecting || pairing() || streaming()) {
     for (const auto& incoming : session_->try_receive_batch(512)) {
@@ -472,6 +456,9 @@ void RemoteRuntime::tick() {
       return;
     }
   }
+  if (streaming()) {
+    play_audio(now);
+  }
   if (streaming() && input_capture_.routes_to_remote(InputDevice::Gamepad) && backend_) {
     if (const auto gamepad = backend_->poll_gamepad(); gamepad) {
       gamepad_coalescer_.update(*gamepad, now);
@@ -503,6 +490,34 @@ void RemoteRuntime::tick() {
       }
     }
   }
+}
+
+void RemoteRuntime::play_audio(SteadyClock::time_point now) {
+  if (!streaming() || !backend_ || !audio_decoder_) {
+    return;
+  }
+  if (!audio_primed_) {
+    if (!audio_jitter_.ready_for_playout()) {
+      return;
+    }
+    audio_primed_ = true;
+    next_audio_playout_ = now;
+  }
+  if (!next_audio_playout_ || now < *next_audio_playout_) {
+    return;
+  }
+
+  const auto playout = audio_jitter_.pop(expected_audio_sequence_);
+  if (playout.kind == AudioPlayoutKind::Packet && playout.packet) {
+    if (const auto samples = audio_decoder_->decode(playout.packet->opus); samples) {
+      backend_->play_audio(*samples);
+    }
+  } else if (const auto samples = audio_decoder_->decode_loss(); samples) {
+    backend_->play_audio(*samples);
+  }
+  ++expected_audio_sequence_;
+  constexpr auto kAudioPlayoutInterval = std::chrono::milliseconds{10};
+  *next_audio_playout_ += kAudioPlayoutInterval;
 }
 
 void RemoteRuntime::send_feedback(SteadyClock::time_point now) {
@@ -538,6 +553,19 @@ void RemoteRuntime::send_feedback(SteadyClock::time_point now) {
   }
 }
 
+void RemoteRuntime::request_keyframe(SteadyClock::time_point now) {
+  if (!streaming() || !session_ || !crypto_ ||
+      (last_keyframe_request_ &&
+       now - *last_keyframe_request_ < std::chrono::milliseconds{300})) {
+    return;
+  }
+  const auto payload = encode_request_keyframe_control();
+  if (const auto sealed = crypto_->seal(PacketType::Control, payload);
+      sealed && session_->send(sealed->bytes)) {
+    last_keyframe_request_ = now;
+  }
+}
+
 void RemoteRuntime::disconnect_session() noexcept {
   if (backend_) {
     backend_->clear_rumble();
@@ -557,6 +585,8 @@ void RemoteRuntime::disconnect_session() noexcept {
   audio_decoder_.reset();
   codec_configured_ = false;
   expected_audio_sequence_ = 0;
+  audio_primed_ = false;
+  next_audio_playout_.reset();
   audio_jitter_ = AudioJitterBuffer{};
   gamepad_coalescer_ = InputCoalescer{};
   session_keys_.reset();
@@ -568,6 +598,7 @@ void RemoteRuntime::disconnect_session() noexcept {
   handshake_retrier_.reset();
   pairing_offer_retrier_.reset();
   confirmation_retrier_.reset();
+  last_keyframe_request_.reset();
   last_feedback_send_.reset();
   feedback_sequence_ = 0;
   telemetry_ = StreamAggregator{};

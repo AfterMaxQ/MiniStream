@@ -38,13 +38,15 @@ class VideoToolboxEncoder {
   Result<void, VideoEncodeError> submit(CVPixelBufferRef pixel_buffer,
                                         std::uint64_t timestamp_us,
                                         bool force_idr = false);
+  std::optional<EncodedFrame> take_next();
+  // Compatibility alias. Frames are returned in encoded order rather than
+  // replacing an unread frame with a newer one.
   std::optional<EncodedFrame> take_latest();
-  // Kept as a source-compatible convenience for callers that can tolerate a
-  // callback not having produced a frame yet.
   Result<EncodedFrame, VideoEncodeError> encode(CVPixelBufferRef pixel_buffer,
                                                 std::uint64_t timestamp_us,
                                                 bool force_idr = false);
   Result<void, VideoEncodeError> reconfigure_bitrate(std::uint32_t bitrate_bps);
+  void request_idr() noexcept;
   void stop() noexcept;
   [[nodiscard]] bool ready() const noexcept;
   [[nodiscard]] CodecConfig codec_config() const;

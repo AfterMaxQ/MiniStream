@@ -41,3 +41,21 @@ TEST_CASE("packet scheduler reports video serialization delay") {
   scheduler.enqueue(Priority::Video, marked(std::byte{2}, 1000), now + 1s);
   REQUIRE(scheduler.estimated_video_queue_delay() == 16ms);
 }
+
+TEST_CASE("50 Mbps scheduler releases a real burst instead of two packets per tick") {
+  PacketScheduler scheduler;
+  scheduler.set_video_rate(50'000'000);
+  const auto now = SteadyClock::time_point{};
+
+  for (int index = 0; index < 300; ++index) {
+    REQUIRE(scheduler.enqueue(Priority::Video, marked(std::byte{1}, 1200), now + 1s));
+  }
+
+  const auto first = scheduler.drain(now, 256);
+  const auto first_count = first.size();
+  REQUIRE(first_count > 32);
+
+  const auto second = scheduler.drain(now + 10ms, 256);
+  const auto second_count = second.size();
+  REQUIRE(second_count >= 40);
+}

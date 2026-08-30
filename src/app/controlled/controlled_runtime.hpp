@@ -95,6 +95,8 @@ class ControlledRuntime {
   std::uint16_t negotiated_height_{1080};
   std::uint16_t negotiated_fps_{60};
   std::uint32_t negotiated_bitrate_{20'000'000};
+  std::uint64_t encoder_bitrate_bps_{};
+  double current_fec_ratio_{0.03};
   std::optional<CodecConfig> last_codec_config_sent_;
   std::optional<SteadyClock::time_point> last_codec_config_send_;
   std::optional<std::uint32_t> last_feedback_sequence_;

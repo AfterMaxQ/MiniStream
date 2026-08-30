@@ -71,11 +71,13 @@ class RemoteRuntime {
   void reset_pairing() noexcept;
   void process_datagram(const ReceivedDatagram& incoming);
   void poll_media(const ReceivedDatagram& incoming);
+  void play_audio(SteadyClock::time_point now);
   void send_input(const DesktopInput& input);
   void send_gamepad(const GamepadPacket& packet);
   void send_pairing_offer(SteadyClock::time_point now);
   void send_pairing_confirmation(bool accepted);
   void finish_streaming();
+  void request_keyframe(SteadyClock::time_point now);
   void send_feedback(SteadyClock::time_point now);
 
   std::unique_ptr<RemoteBackend> backend_;
@@ -91,6 +93,8 @@ class RemoteRuntime {
   std::unique_ptr<OpusDecoder48kStereo> audio_decoder_;
   AudioJitterBuffer audio_jitter_;
   std::uint32_t expected_audio_sequence_{};
+  bool audio_primed_{};
+  std::optional<SteadyClock::time_point> next_audio_playout_;
   std::optional<DeviceIdentity> identity_;
   std::optional<EphemeralKeyPair> ephemeral_;
   std::optional<Hello> hello_;
@@ -109,6 +113,7 @@ class RemoteRuntime {
   InputCoalescer gamepad_coalescer_;
   SessionId session_id_{1};
   bool codec_configured_{};
+  std::optional<SteadyClock::time_point> last_keyframe_request_;
   std::optional<SteadyClock::time_point> last_feedback_send_;
   std::uint32_t feedback_sequence_{};
   StreamAggregator telemetry_;

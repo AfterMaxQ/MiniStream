@@ -13,6 +13,12 @@
 
 namespace ministream {
 
+// Returns the approximate wire bitrate required for an encoder target after
+// media headers, authenticated encryption, and the configured FEC parity are
+// included in the scheduler budget.
+std::uint64_t required_video_wire_rate(std::uint64_t encoder_bitrate,
+                                       double fec_ratio) noexcept;
+
 // The media pipeline owns the boundary between codec output and the wire.
 // Codecs hand it encoded frames, it authenticates each packet, and the
 // scheduler applies the same priority/deadline policy to every stream.
@@ -49,6 +55,7 @@ class MediaReceiver {
   [[nodiscard]] std::uint64_t fec_unrecoverable_frames() const noexcept;
   [[nodiscard]] std::uint64_t received_video_packets() const noexcept;
   [[nodiscard]] std::uint64_t lost_video_packets() const noexcept;
+  [[nodiscard]] std::uint64_t recovered_video_packets() const noexcept;
 
  private:
   std::optional<std::vector<std::byte>> open(PacketType expected,
@@ -57,10 +64,6 @@ class MediaReceiver {
   SessionId session_id_;
   SessionCrypto& crypto_;
   VideoFecReassembler reassembler_;
-  std::optional<std::uint32_t> last_video_sequence_;
-  std::optional<std::uint32_t> last_video_frame_id_;
-  std::uint64_t received_video_packets_{};
-  std::uint64_t lost_video_packets_{};
 };
 
 }  // namespace ministream

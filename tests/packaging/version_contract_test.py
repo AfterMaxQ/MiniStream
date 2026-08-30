@@ -10,7 +10,7 @@ def test_release_version_is_derived_from_project_version() -> None:
     packaging = (ROOT / "packaging" / "Packaging.cmake").read_text(encoding="utf-8")
     match = re.search(r"project\(MiniStream\s+VERSION\s+([0-9.]+)", cmake)
     assert match, "project version declaration is missing"
-    assert match.group(1) == "0.2.0"
+    assert match.group(1) == "0.2.1"
     assert 'set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")' in packaging
     assert 'set(CPACK_PACKAGE_FILE_NAME "MiniStream-${PROJECT_VERSION}-' in packaging
 

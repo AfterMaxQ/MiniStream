@@ -85,6 +85,8 @@ void ControlledRuntime::stop() noexcept {
   media_sender_.reset();
   crypto_.reset();
   rate_controller_.reset();
+  encoder_bitrate_bps_ = 0;
+  current_fec_ratio_ = 0.03;
   audio_encoder_.reset();
   audio_pending_.clear();
   {
@@ -155,9 +157,12 @@ void ControlledRuntime::create_media_sender() {
   crypto_ = std::make_unique<SessionCrypto>(
       session_id_, session_keys_->tx, session_keys_->rx, 0x4D535448U, 0x4D535443U);
   scheduler_ = std::make_unique<PacketScheduler>();
-  scheduler_->set_video_rate(std::max<std::uint32_t>(1U, negotiated_bitrate_));
+  encoder_bitrate_bps_ = std::max<std::uint32_t>(1U, negotiated_bitrate_);
+  current_fec_ratio_ = 0.03;
+  scheduler_->set_video_rate(
+      required_video_wire_rate(encoder_bitrate_bps_, current_fec_ratio_));
   media_sender_ = std::make_unique<MediaSender>(session_id_, *crypto_, *scheduler_);
-  media_sender_->set_fec_ratio(0.03);
+  media_sender_->set_fec_ratio(current_fec_ratio_);
   const auto profile = negotiated_width_ == 1920 && negotiated_height_ == 1080
                            ? stream_profile(StreamProfileId::Debug1080)
                            : (negotiated_width_ == 2560 && negotiated_height_ == 1440
@@ -245,6 +250,8 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
       if (const auto payload = crypto_->open(incoming.datagram);
           payload && is_disconnect_control(*payload)) {
         clear_peer_session();
+      } else if (payload && is_request_keyframe_control(*payload) && backend_) {
+        backend_->request_keyframe();
       }
       return;
     }
@@ -375,15 +382,20 @@ void ControlledRuntime::apply_feedback(const FeedbackReport& report) {
       static_cast<std::uint32_t>(std::min<std::uint64_t>(
           delta.fec_unrecoverable, std::numeric_limits<std::uint32_t>::max()))};
   const auto decision = rate_controller_->update(feedback, SteadyClock::now());
-  if (decision.bitrate_bps != scheduler_->video_rate_bps()) {
+  if (decision.bitrate_bps != encoder_bitrate_bps_) {
     if (!backend_->reconfigure_bitrate(static_cast<std::uint32_t>(decision.bitrate_bps))) {
       std::clog << "rate update rejected by encoder; keeping bitrate="
-                << scheduler_->video_rate_bps() << '\n';
+                << encoder_bitrate_bps_ << '\n';
       return;
     }
-    scheduler_->set_video_rate(decision.bitrate_bps);
+    encoder_bitrate_bps_ = decision.bitrate_bps;
   }
-  media_sender_->set_fec_ratio(decision.fec_ratio);
+  current_fec_ratio_ = decision.fec_ratio;
+  media_sender_->set_fec_ratio(current_fec_ratio_);
+  const auto wire_rate = required_video_wire_rate(encoder_bitrate_bps_, current_fec_ratio_);
+  if (wire_rate != scheduler_->video_rate_bps()) {
+    scheduler_->set_video_rate(wire_rate);
+  }
 }
 
 void ControlledRuntime::send_pending_video(SteadyClock::time_point now) {
@@ -490,15 +502,14 @@ void ControlledRuntime::tick() {
   if (!scheduler_) {
     return;
   }
-  for (unsigned count = 0; count < 32; ++count) {
-    const auto datagram = scheduler_->next(now);
-    if (!datagram) {
+  constexpr std::size_t kMaxSendPacketsPerTick = 256;
+  for (auto& datagram : scheduler_->drain(now, kMaxSendPacketsPerTick)) {
+    if (!session_->reply(datagram.bytes)) {
       break;
     }
-    session_->reply(datagram->bytes);
   }
   StreamSample sample;
-  sample.bitrate_bps = scheduler_->video_rate_bps();
+  sample.bitrate_bps = encoder_bitrate_bps_;
   sample.fec_ratio = media_sender_ ? media_sender_->fec_ratio() : 0.0;
   sample.send_queue_ms = static_cast<double>(
       std::chrono::duration_cast<Microseconds>(scheduler_->estimated_video_queue_delay())
@@ -525,6 +536,8 @@ void ControlledRuntime::clear_peer_session() noexcept {
   media_sender_.reset();
   crypto_.reset();
   rate_controller_.reset();
+  encoder_bitrate_bps_ = 0;
+  current_fec_ratio_ = 0.03;
   audio_encoder_.reset();
   audio_pending_.clear();
   {

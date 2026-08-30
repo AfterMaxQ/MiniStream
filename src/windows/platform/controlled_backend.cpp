@@ -131,6 +131,12 @@ bool WindowsControlledBackend::reconfigure_bitrate(std::uint32_t bitrate_bps) {
   return true;
 }
 
+void WindowsControlledBackend::request_keyframe() noexcept {
+  if (impl_->encoder) {
+    impl_->encoder->request_idr();
+  }
+}
+
 std::optional<EncodedFrame> WindowsControlledBackend::next_video() {
   if (!impl_->started || !impl_->capture || !impl_->encoder) {
     return std::nullopt;

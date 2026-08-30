@@ -30,6 +30,7 @@ class ControlledBackend {
   virtual bool configure_video(const CodecConfig&) { return true; }
   // Adaptation is committed only when the backend accepts the new rate.
   virtual bool reconfigure_bitrate(std::uint32_t) { return false; }
+  virtual void request_keyframe() noexcept {}
   [[nodiscard]] virtual std::optional<PcmBlock> next_audio() = 0;
   virtual bool inject_input(const DesktopInput& input) = 0;
   virtual bool submit_gamepad(const GamepadState&) { return false; }

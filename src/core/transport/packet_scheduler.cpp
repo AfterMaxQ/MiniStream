@@ -2,8 +2,14 @@
 
 #include <algorithm>
 #include <chrono>
+#include <utility>
 
 namespace ministream {
+namespace {
+
+constexpr double kVideoBurstSeconds = 0.020;
+
+}  // namespace
 
 bool PacketScheduler::enqueue(
     Priority priority, Datagram datagram, SteadyClock::time_point deadline) {
@@ -41,6 +47,20 @@ std::optional<Datagram> PacketScheduler::next(SteadyClock::time_point now) {
   return std::nullopt;
 }
 
+std::vector<Datagram> PacketScheduler::drain(
+    SteadyClock::time_point now, std::size_t max_packets) {
+  std::vector<Datagram> result;
+  result.reserve(max_packets);
+  while (result.size() < max_packets) {
+    auto packet = next(now);
+    if (!packet) {
+      break;
+    }
+    result.push_back(std::move(*packet));
+  }
+  return result;
+}
+
 Microseconds PacketScheduler::estimated_video_queue_delay() const {
   if (video_rate_bps_ == 0) {
     return Microseconds::max();
@@ -59,8 +79,14 @@ std::uint64_t PacketScheduler::video_rate_bps() const noexcept { return video_ra
 
 void PacketScheduler::set_video_rate(std::uint64_t bits_per_second) {
   video_rate_bps_ = bits_per_second;
-  video_tokens_bits_ = static_cast<double>(kMaxDatagramBytes * 16);
+  video_tokens_bits_ = max_video_tokens_bits();
   last_refill_.reset();
+}
+
+double PacketScheduler::max_video_tokens_bits() const noexcept {
+  const auto rate_window = static_cast<double>(video_rate_bps_) * kVideoBurstSeconds;
+  const auto minimum = static_cast<double>(kMaxDatagramBytes * 8ULL * 8ULL);
+  return std::max(rate_window, minimum);
 }
 
 void PacketScheduler::discard_expired(SteadyClock::time_point now) {
@@ -70,14 +96,15 @@ void PacketScheduler::discard_expired(SteadyClock::time_point now) {
 }
 
 void PacketScheduler::refill_video_tokens(SteadyClock::time_point now) {
+  const auto maximum = max_video_tokens_bits();
   if (!last_refill_) {
     last_refill_ = now;
+    video_tokens_bits_ = maximum;
     return;
   }
   const auto elapsed = std::chrono::duration<double>(now - *last_refill_).count();
-  const auto burst = static_cast<double>(kMaxDatagramBytes * 16);
   video_tokens_bits_ = std::min(
-      burst, video_tokens_bits_ + elapsed * static_cast<double>(video_rate_bps_));
+      maximum, video_tokens_bits_ + elapsed * static_cast<double>(video_rate_bps_));
   last_refill_ = now;
 }
 

@@ -93,6 +93,12 @@ void MacControlledBackend::stop() noexcept {
   impl_->started = false;
 }
 
+void MacControlledBackend::request_keyframe() noexcept {
+  if (impl_ && impl_->encoder) {
+    impl_->encoder->request_idr();
+  }
+}
+
 bool MacControlledBackend::configure_video(const CodecConfig& config) {
   if (!impl_->started || config.width == 0 || config.height == 0 || config.fps == 0 ||
       config.hdr10 || (config.codec != VideoCodec::H264 && config.codec != VideoCodec::Hevc)) {
@@ -145,7 +151,7 @@ std::optional<EncodedFrame> MacControlledBackend::next_video() {
   const auto submitted = impl_->encoder->submit(captured->pixel_buffer, captured->timestamp_us);
   CVPixelBufferRelease(captured->pixel_buffer);
   if (!submitted) return std::nullopt;
-  const auto encoded = impl_->encoder->take_latest();
+  const auto encoded = impl_->encoder->take_next();
   if (!encoded) return std::nullopt;
   impl_->active = impl_->encoder->codec_config();
   return *encoded;

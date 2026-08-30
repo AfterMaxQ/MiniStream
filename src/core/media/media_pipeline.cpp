@@ -4,15 +4,33 @@
 #include "core/transport/packetizer.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 namespace ministream {
-namespace {
 
-bool sequence_newer(std::uint32_t current, std::uint32_t previous) noexcept {
-  return static_cast<std::int32_t>(current - previous) > 0;
+std::uint64_t required_video_wire_rate(std::uint64_t encoder_bitrate,
+                                       double fec_ratio) noexcept {
+  if (encoder_bitrate == 0) {
+    return 0;
+  }
+  const auto clamped_ratio = std::clamp(fec_ratio, 0.0, 1.0);
+  const auto data_shard_bytes = clamped_ratio > 0.0
+                                    ? kVideoFecShardPayloadBytes
+                                    : kVideoShardPayloadBytes;
+  const auto data_factor = static_cast<double>(
+      data_shard_bytes + kMediaHeaderBytes + kSessionCryptoOverheadBytes) /
+                           static_cast<double>(data_shard_bytes);
+  const auto parity_factor = static_cast<double>(
+      kVideoFecShardPayloadBytes + kVideoFecHeaderBytes + kSessionCryptoOverheadBytes) /
+                             static_cast<double>(kVideoFecShardPayloadBytes);
+  const auto factor = data_factor + clamped_ratio * parity_factor;
+  const auto required = std::ceil(static_cast<long double>(encoder_bitrate) * factor);
+  if (required >= static_cast<long double>(std::numeric_limits<std::uint64_t>::max())) {
+    return std::numeric_limits<std::uint64_t>::max();
+  }
+  return static_cast<std::uint64_t>(required);
 }
-
-}  // namespace
 
 
 MediaSender::MediaSender(SessionId session_id, SessionCrypto& crypto,
@@ -110,17 +128,6 @@ std::optional<EncodedFrame> MediaReceiver::receive_video(
   if (!shard) {
     return std::nullopt;
   }
-  ++received_video_packets_;
-  if (!last_video_sequence_ || sequence_newer(shard->header.packet_seq, *last_video_sequence_)) {
-    if (last_video_frame_id_ && *last_video_frame_id_ == shard->header.frame_id) {
-      const auto gap = shard->header.packet_seq - *last_video_sequence_;
-      if (gap > 1U && gap <= kMaxVideoShards) {
-        lost_video_packets_ += gap - 1U;
-      }
-    }
-    last_video_sequence_ = shard->header.packet_seq;
-    last_video_frame_id_ = shard->header.frame_id;
-  }
   return reassembler_.push_data(*shard, now);
 }
 
@@ -151,11 +158,15 @@ std::uint64_t MediaReceiver::fec_unrecoverable_frames() const noexcept {
 }
 
 std::uint64_t MediaReceiver::received_video_packets() const noexcept {
-  return received_video_packets_;
+  return reassembler_.received_data_shards();
 }
 
 std::uint64_t MediaReceiver::lost_video_packets() const noexcept {
-  return lost_video_packets_;
+  return reassembler_.lost_data_shards();
+}
+
+std::uint64_t MediaReceiver::recovered_video_packets() const noexcept {
+  return reassembler_.recovered_data_shards();
 }
 
 }  // namespace ministream

@@ -27,6 +27,7 @@ class AudioJitterBuffer {
   explicit AudioJitterBuffer(AudioJitterConfig config = {});
   void push(AudioPacket packet);
   AudioPlayoutResult pop(std::uint32_t expected_sequence);
+  [[nodiscard]] bool ready_for_playout() const noexcept;
   [[nodiscard]] Microseconds buffered_duration() const;
 
  private:

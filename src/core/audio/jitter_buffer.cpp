@@ -28,6 +28,10 @@ AudioPlayoutResult AudioJitterBuffer::pop(std::uint32_t expected_sequence) {
   return {AudioPlayoutKind::Packet, std::move(packet)};
 }
 
+bool AudioJitterBuffer::ready_for_playout() const noexcept {
+  return buffered_duration() >= config_.target;
+}
+
 Microseconds AudioJitterBuffer::buffered_duration() const {
   return Microseconds{static_cast<std::int64_t>(buffered_samples_ * 1'000'000ULL / 48'000ULL)};
 }

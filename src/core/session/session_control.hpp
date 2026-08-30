@@ -7,6 +7,7 @@
 namespace ministream {
 
 inline constexpr std::byte kDisconnectControlPayload{0xD1};
+inline constexpr std::byte kRequestKeyframeControlPayload{0xD2};
 
 inline std::array<std::byte, 1> encode_disconnect_control() noexcept {
   return {kDisconnectControlPayload};
@@ -14,6 +15,14 @@ inline std::array<std::byte, 1> encode_disconnect_control() noexcept {
 
 inline bool is_disconnect_control(std::span<const std::byte> bytes) noexcept {
   return bytes.size() == 1 && bytes.front() == kDisconnectControlPayload;
+}
+
+inline std::array<std::byte, 1> encode_request_keyframe_control() noexcept {
+  return {kRequestKeyframeControlPayload};
+}
+
+inline bool is_request_keyframe_control(std::span<const std::byte> bytes) noexcept {
+  return bytes.size() == 1 && bytes.front() == kRequestKeyframeControlPayload;
 }
 
 }  // namespace ministream

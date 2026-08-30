@@ -4,8 +4,10 @@
 #import <VideoToolbox/VideoToolbox.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
+#include <deque>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -16,8 +18,9 @@ struct VideoToolboxEncoder::Impl {
   VTCompressionSessionRef session{};
   VideoEncodeConfig config{};
   CodecConfig codec_config{};
-  EncodedFrame latest{};
-  bool has_latest{};
+  std::deque<EncodedFrame> ready_frames;
+  std::atomic_bool force_next_idr{false};
+  bool awaiting_idr{};
   std::uint32_t next_frame_id{};
   std::mutex mutex;
 };
@@ -134,9 +137,21 @@ void output_callback(void* refcon, void*, OSStatus status, VTEncodeInfoFlags,
     keyframe = !CFDictionaryContainsKey(dictionary, kCMSampleAttachmentKey_NotSync);
   }
   std::scoped_lock lock(impl->mutex);
-  impl->latest = {impl->next_frame_id++, timestamp_us, keyframe,
-                  std::move(bytes)};
-  impl->has_latest = true;
+  constexpr std::size_t kMaxReadyFrames = 6;
+  if (impl->ready_frames.size() >= kMaxReadyFrames) {
+    impl->ready_frames.clear();
+    impl->awaiting_idr = true;
+    impl->force_next_idr.store(true, std::memory_order_release);
+  }
+  if (impl->awaiting_idr && !keyframe) {
+    return;
+  }
+  if (keyframe) {
+    impl->awaiting_idr = false;
+    impl->force_next_idr.store(false, std::memory_order_release);
+  }
+  impl->ready_frames.push_back(
+      {impl->next_frame_id++, timestamp_us, keyframe, std::move(bytes)});
   if (keyframe) {
     if (const auto format = CMSampleBufferGetFormatDescription(sample)) {
       auto sets = parameter_sets(format, impl->config.codec);
@@ -207,8 +222,10 @@ Result<void, VideoEncodeError> VideoToolboxEncoder::submit(
   if (!ready() || !pixel_buffer) {
     return Result<void, VideoEncodeError>::err(VideoEncodeError::Unavailable);
   }
+  const bool requested_idr =
+      force_idr || impl_->force_next_idr.load(std::memory_order_acquire);
   CFDictionaryRef properties = nullptr;
-  if (force_idr) {
+  if (requested_idr) {
     properties = (__bridge CFDictionaryRef)@{
         (__bridge NSString*)kVTEncodeFrameOptionKey_ForceKeyFrame: @YES,
     };
@@ -223,19 +240,20 @@ Result<void, VideoEncodeError> VideoToolboxEncoder::submit(
   return Result<void, VideoEncodeError>::ok();
 }
 
-std::optional<EncodedFrame> VideoToolboxEncoder::take_latest() {
+std::optional<EncodedFrame> VideoToolboxEncoder::take_next() {
   if (!impl_) {
     return std::nullopt;
   }
   std::scoped_lock lock(impl_->mutex);
-  if (!impl_->has_latest) {
+  if (impl_->ready_frames.empty()) {
     return std::nullopt;
   }
-  auto result = std::move(impl_->latest);
-  impl_->latest = {};
-  impl_->has_latest = false;
+  auto result = std::move(impl_->ready_frames.front());
+  impl_->ready_frames.pop_front();
   return result;
 }
+
+std::optional<EncodedFrame> VideoToolboxEncoder::take_latest() { return take_next(); }
 
 Result<EncodedFrame, VideoEncodeError> VideoToolboxEncoder::encode(
     CVPixelBufferRef pixel_buffer, std::uint64_t timestamp_us, bool force_idr) {
@@ -262,11 +280,23 @@ void VideoToolboxEncoder::stop() noexcept {
     impl_->session = nullptr;
   }
   std::scoped_lock lock(impl_->mutex);
-  impl_->latest = {};
-  impl_->has_latest = false;
+  impl_->ready_frames.clear();
+  impl_->awaiting_idr = false;
+  impl_->force_next_idr.store(false, std::memory_order_release);
   impl_->next_frame_id = 0;
   impl_->config = {};
   impl_->codec_config = {};
+}
+
+void VideoToolboxEncoder::request_idr() noexcept {
+  if (impl_) {
+    {
+      std::scoped_lock lock(impl_->mutex);
+      impl_->ready_frames.clear();
+      impl_->awaiting_idr = true;
+      impl_->force_next_idr.store(true, std::memory_order_release);
+    }
+  }
 }
 
 Result<void, VideoEncodeError> VideoToolboxEncoder::reconfigure_bitrate(

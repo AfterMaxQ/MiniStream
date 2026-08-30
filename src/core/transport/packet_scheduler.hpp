@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <deque>
 #include <optional>
+#include <vector>
 
 namespace ministream {
 
@@ -17,6 +18,7 @@ class PacketScheduler {
  public:
   bool enqueue(Priority priority, Datagram datagram, SteadyClock::time_point deadline);
   std::optional<Datagram> next(SteadyClock::time_point now);
+  std::vector<Datagram> drain(SteadyClock::time_point now, std::size_t max_packets);
   [[nodiscard]] Microseconds estimated_video_queue_delay() const;
   [[nodiscard]] std::uint64_t video_rate_bps() const noexcept;
   void set_video_rate(std::uint64_t bits_per_second);
@@ -29,11 +31,12 @@ class PacketScheduler {
 
   void discard_expired(SteadyClock::time_point now);
   void refill_video_tokens(SteadyClock::time_point now);
+  [[nodiscard]] double max_video_tokens_bits() const noexcept;
 
   static constexpr std::array<std::size_t, 5> kQueueLimits{64, 64, 128, 512, 64};
   std::array<std::deque<QueuedDatagram>, 5> queues_;
   std::uint64_t video_rate_bps_{20'000'000};
-  double video_tokens_bits_{static_cast<double>(kMaxDatagramBytes * 16)};
+  double video_tokens_bits_{};
   std::optional<SteadyClock::time_point> last_refill_;
 };
 

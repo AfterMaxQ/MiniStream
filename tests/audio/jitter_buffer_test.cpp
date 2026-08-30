@@ -46,3 +46,26 @@ TEST_CASE("audio jitter buffer never grows beyond twenty milliseconds") {
   REQUIRE(buffer.pop(1).kind == AudioPlayoutKind::Plc);
   REQUIRE(buffer.pop(2).kind == AudioPlayoutKind::Packet);
 }
+
+TEST_CASE("audio jitter buffer honors its ten millisecond playout target") {
+  AudioJitterBuffer buffer({10ms, 20ms});
+  buffer.push(AudioPacket{1, 0, 240, {std::byte{1}}});
+  REQUIRE_FALSE(buffer.ready_for_playout());
+
+  buffer.push(AudioPacket{3, 10'000, 240, {std::byte{3}}});
+  REQUIRE(buffer.ready_for_playout());
+  REQUIRE(buffer.buffered_duration() == 10ms);
+}
+
+TEST_CASE("audio jitter buffer keeps an in-window reordered packet out of PLC") {
+  AudioJitterBuffer buffer({10ms, 20ms});
+  buffer.push(packet(1));
+  buffer.push(packet(3));
+  REQUIRE(buffer.ready_for_playout());
+  REQUIRE(buffer.pop(1).kind == AudioPlayoutKind::Packet);
+
+  buffer.push(packet(2));
+  const auto reordered = buffer.pop(2);
+  REQUIRE(reordered.kind == AudioPlayoutKind::Packet);
+  REQUIRE(reordered.packet->sequence == 2);
+}

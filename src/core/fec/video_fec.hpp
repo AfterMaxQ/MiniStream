@@ -73,6 +73,15 @@ class VideoFecReassembler {
   [[nodiscard]] std::uint64_t unrecoverable_frames() const noexcept {
     return unrecoverable_frames_;
   }
+  [[nodiscard]] std::uint64_t received_data_shards() const noexcept {
+    return received_data_shards_;
+  }
+  [[nodiscard]] std::uint64_t lost_data_shards() const noexcept {
+    return lost_data_shards_;
+  }
+  [[nodiscard]] std::uint64_t recovered_data_shards() const noexcept {
+    return recovered_data_shards_;
+  }
 
  public:
   struct PendingFrame {
@@ -89,20 +98,29 @@ class VideoFecReassembler {
 
  private:
   std::optional<EncodedFrame> complete(PendingFrame& frame, bool recovered);
+  std::optional<EncodedFrame> try_complete(PendingFrame& frame);
   PendingFrame* find_or_create(const VideoFecHeader& header,
                                SteadyClock::time_point now);
-  void erase_frame(std::uint32_t frame_id);
+  void erase_frame(std::uint32_t frame_id, bool remember_expired_frame = false);
+  void account_missing(const PendingFrame& frame) noexcept;
+  void remember_expired(std::uint32_t frame_id);
   void remember_completed(std::uint32_t frame_id);
   [[nodiscard]] bool was_completed(std::uint32_t frame_id) const noexcept;
+  [[nodiscard]] bool was_expired(std::uint32_t frame_id) const noexcept;
 
   ReassemblyConfig config_;
   FecCodec codec_;
   std::unordered_map<std::uint32_t, PendingFrame> frames_;
   std::vector<std::uint32_t> insertion_order_;
+  std::unordered_set<std::uint32_t> expired_frames_;
+  std::deque<std::uint32_t> expired_order_;
   std::unordered_set<std::uint32_t> completed_frames_;
   std::deque<std::uint32_t> completed_order_;
   std::uint64_t recovered_frames_{};
   std::uint64_t unrecoverable_frames_{};
+  std::uint64_t received_data_shards_{};
+  std::uint64_t lost_data_shards_{};
+  std::uint64_t recovered_data_shards_{};
 };
 
 }  // namespace ministream

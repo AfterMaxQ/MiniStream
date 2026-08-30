@@ -62,6 +62,15 @@ TEST_CASE("media sender authenticates video and audio without exceeding MTU") {
   REQUIRE(decoded_audio->opus == audio.opus);
 }
 
+TEST_CASE("video wire budget includes FEC and authenticated envelope overhead") {
+  const auto baseline = required_video_wire_rate(20'000'000, 0.03);
+  const auto higher_fec = required_video_wire_rate(20'000'000, 0.15);
+
+  REQUIRE(baseline > 20'000'000);
+  REQUIRE(baseline < 25'000'000);
+  REQUIRE(higher_fec > baseline);
+}
+
 TEST_CASE("media pipeline recovers one dropped video shard through authenticated FEC") {
   const auto key = test_key();
   SessionCrypto tx{8, key, key, 21, 21};
@@ -160,6 +169,96 @@ TEST_CASE("video FEC reassembler recovers a raw shard before encryption") {
       SteadyClock::time_point{});
   REQUIRE(restored.has_value());
   REQUIRE(restored->bytes == frame.bytes);
+}
+
+TEST_CASE("video FEC reassembler recovers when parity arrives before the missing data") {
+  EncodedFrame frame{104, 7891, true,
+                     std::vector<std::byte>(kVideoFecShardPayloadBytes * 4U + 3U)};
+  const auto generated = VideoFecEncoder{14}.encode_frame(frame, 0.2);
+  REQUIRE(generated.video_datagrams.size() == 5);
+  REQUIRE(generated.fec_datagrams.size() == 1);
+
+  VideoFecReassembler reassembler;
+  const auto parity_payload = std::span<const std::byte>{generated.fec_datagrams.front().bytes}
+                                  .subspan(kCommonHeaderBytes);
+  REQUIRE_FALSE(reassembler.push_parity(parity_payload, SteadyClock::time_point{}).has_value());
+
+  std::optional<EncodedFrame> restored;
+  for (std::size_t index = 0; index < generated.video_datagrams.size(); ++index) {
+    if (index == 1) {
+      continue;
+    }
+    const auto shard = parse_video_datagram(generated.video_datagrams[index]);
+    REQUIRE(shard.has_value());
+    restored = reassembler.push_data(*shard, SteadyClock::time_point{});
+  }
+
+  REQUIRE(restored.has_value());
+  REQUIRE(restored->bytes == frame.bytes);
+  REQUIRE(reassembler.recovered_frames() == 1);
+}
+
+namespace {
+
+std::vector<Datagram> encrypted_video_shards(SessionId session_id,
+                                              SessionCrypto& crypto,
+                                              const EncodedFrame& frame) {
+  std::vector<Datagram> result;
+  for (const auto& packet : packetize_video(frame, session_id)) {
+    const auto bytes = std::span<const std::byte>{packet.bytes};
+    const auto sealed = crypto.seal(PacketType::Video,
+                                    bytes.subspan(kCommonHeaderBytes));
+    if (sealed) {
+      result.push_back(*sealed);
+    }
+  }
+  return result;
+}
+
+}  // namespace
+
+TEST_CASE("media receiver accounts for missing first middle and last shards") {
+  const auto key = test_key();
+  const auto now = SteadyClock::time_point{};
+
+  for (const auto missing : {std::size_t{0}, std::size_t{1}, std::size_t{2}}) {
+    const auto session_id = 15 + static_cast<SessionId>(missing);
+    SessionCrypto tx{session_id, key, key, 61, 61};
+    SessionCrypto rx{session_id, key, key, 61, 61};
+    MediaReceiver receiver{session_id, rx};
+    const EncodedFrame frame{105 + static_cast<std::uint32_t>(missing), 8000 + missing, false,
+                             std::vector<std::byte>(kVideoShardPayloadBytes * 2U + 3U)};
+    const auto datagrams = encrypted_video_shards(session_id, tx, frame);
+    for (std::size_t index = 0; index < datagrams.size(); ++index) {
+      if (index != missing) {
+        (void)receiver.receive_video(datagrams[index], now);
+      }
+    }
+    REQUIRE(receiver.received_video_packets() == 2);
+    receiver.expire_video(now + 26ms);
+    REQUIRE(receiver.lost_video_packets() == 1);
+  }
+}
+
+TEST_CASE("media receiver does not count duplicate video shards twice") {
+  const auto key = test_key();
+  SessionCrypto tx{18, key, key, 62, 62};
+  SessionCrypto rx{18, key, key, 62, 62};
+  MediaReceiver receiver{18, rx};
+  const auto now = SteadyClock::time_point{};
+  const EncodedFrame frame{108, 8003, false,
+                           std::vector<std::byte>(kVideoShardPayloadBytes * 2U + 3U)};
+  const auto datagrams = encrypted_video_shards(18, tx, frame);
+  REQUIRE(datagrams.size() == 3);
+  for (const auto& datagram : datagrams) {
+    (void)receiver.receive_video(datagram, now);
+  }
+  const auto duplicate = encrypted_video_shards(18, tx, frame);
+  REQUIRE(duplicate.size() == 3);
+  (void)receiver.receive_video(duplicate[1], now);
+
+  REQUIRE(receiver.received_video_packets() == 3);
+  REQUIRE(receiver.lost_video_packets() == 0);
 }
 
 TEST_CASE("media pipeline ignores parity that arrives after a complete frame") {

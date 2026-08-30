@@ -15,6 +15,7 @@ add_executable(
   net/fault_injector_test.cpp
   adaptation/rate_controller_test.cpp
   fec/fec_codec_test.cpp
+  fec/video_fec_test.cpp
   security/pairing_test.cpp
   security/session_crypto_test.cpp
   session/handshake_test.cpp
@@ -33,6 +34,7 @@ add_executable(
   input/input_capture_test.cpp
   input/rumble_packet_test.cpp
   session/session_runtime_test.cpp
+  session/session_control_test.cpp
   telemetry/stream_aggregator_test.cpp
   telemetry/feedback_wire_test.cpp
   config/stream_profile_test.cpp
@@ -84,3 +86,14 @@ endif()
 
 include(Catch)
 catch_discover_tests(ministream_tests)
+
+if(APPLE)
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    add_test(
+      NAME macos_videotoolbox_queue_contract
+      COMMAND "${Python3_EXECUTABLE}"
+              "${PROJECT_SOURCE_DIR}/tests/macos/videotoolbox_queue_contract_test.py"
+    )
+  endif()
+endif()
