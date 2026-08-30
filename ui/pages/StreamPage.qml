@@ -5,11 +5,49 @@ import MiniStream
 Item {
     id: root
     required property var controller
+    focus: controller.remoteInputActive
+
+    Connections {
+        target: root.controller
+        function onStateChanged() {
+            if (root.controller.remoteInputActive) {
+                root.forceActiveFocus()
+            }
+        }
+    }
+
+    Keys.enabled: root.controller.remoteInputActive
+    Keys.onPressed: function(event) {
+        if (!event.isAutoRepeat) {
+            root.controller.routeKey(event.key, true)
+            event.accepted = true
+        }
+    }
+    Keys.onReleased: function(event) {
+        if (!event.isAutoRepeat) {
+            root.controller.routeKey(event.key, false)
+            event.accepted = true
+        }
+    }
 
     Rectangle {
         id: videoSurface
         anchors.fill: parent
         color: "#050607"
+
+        VideoSurfaceItem {
+            id: nativeVideo
+            anchors.fill: parent
+            bridge: root.controller.videoSurface
+        }
+
+        Text {
+            anchors.centerIn: parent
+            visible: !nativeVideo.frameAvailable
+            text: "Waiting for video"
+            color: Tokens.textMuted
+            font.pixelSize: 14
+        }
 
         MouseArea {
             anchors.fill: parent
@@ -60,13 +98,6 @@ Item {
                 font.pixelSize: 20
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.WordWrap
-            }
-            Text {
-                width: parent.width
-                text: "Waiting for video"
-                color: Tokens.textMuted
-                font.pixelSize: 14
-                horizontalAlignment: Text.AlignHCenter
             }
             AppButton {
                 anchors.horizontalCenter: parent.horizontalCenter

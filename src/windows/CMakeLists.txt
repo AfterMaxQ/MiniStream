@@ -38,6 +38,10 @@ if(MINISTREAM_BUILD_UI)
     "${PROJECT_SOURCE_DIR}/src/app/qt_main.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.hpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.cpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.hpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/windows_video_surface_bridge.cpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/windows_video_surface_bridge.hpp"
   )
   target_link_libraries(
     ministream

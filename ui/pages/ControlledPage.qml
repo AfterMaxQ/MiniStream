@@ -83,5 +83,12 @@ Item {
                            : root.controller.startBroadcast()
             }
         }
+
+        AppButton {
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: root.controller.permissionActionAvailable
+            text: "Open System Settings"
+            onClicked: root.controller.openPermissionSettings()
+        }
     }
 }

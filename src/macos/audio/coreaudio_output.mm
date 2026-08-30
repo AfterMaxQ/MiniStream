@@ -5,18 +5,19 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
-#include <deque>
 #include <mutex>
-#include <utility>
-#include <vector>
+#include <array>
 
 namespace ministream {
 
 struct CoreAudioOutput::Impl {
   AudioUnit unit{};
   mutable std::mutex mutex;
-  std::deque<float> samples;
-  std::size_t max_samples{48'000U * 2U / 5U};  // 200 ms
+  static constexpr std::size_t kMaxSamples = 48'000U * 2U / 5U;  // 200 ms
+  std::array<float, kMaxSamples> samples{};
+  std::size_t read_index{};
+  std::size_t write_index{};
+  std::size_t sample_count{};
   std::atomic<std::uint64_t> underruns{};
   bool started{};
 };
@@ -29,21 +30,27 @@ OSStatus render_callback(void* refcon, AudioUnitRenderActionFlags*, const AudioT
     return noErr;
   }
   const auto requested = static_cast<std::size_t>(frames) * 2U;
-  std::vector<float> scratch(requested, 0.0F);
+  std::array<float, 8192> scratch{};
+  const auto writable = std::min(requested, scratch.size());
   {
     std::scoped_lock lock(impl->mutex);
-    const auto available = std::min(requested, impl->samples.size());
+    const auto available = std::min(writable, impl->sample_count);
     for (std::size_t i = 0; i < available; ++i) {
-      scratch[i] = impl->samples.front();
-      impl->samples.pop_front();
+      scratch[i] = impl->samples[impl->read_index];
+      impl->read_index = (impl->read_index + 1U) % Impl::kMaxSamples;
     }
+    impl->sample_count -= available;
     if (available < requested) {
       ++impl->underruns;
     }
   }
   if (output->mBuffers[0].mData != nullptr) {
-    std::memcpy(output->mBuffers[0].mData, scratch.data(),
-                requested * sizeof(float));
+    std::memcpy(output->mBuffers[0].mData, scratch.data(), writable * sizeof(float));
+    if (writable < requested) {
+      std::memset(static_cast<std::byte*>(output->mBuffers[0].mData) +
+                      writable * sizeof(float),
+                  0, (requested - writable) * sizeof(float));
+    }
   }
   return noErr;
 }
@@ -63,12 +70,6 @@ Result<void, CoreAudioError> CoreAudioOutput::start() {
   const auto component = AudioComponentFindNext(nullptr, &description);
   if (!component || AudioComponentInstanceNew(component, &impl_->unit) != noErr) {
     return Result<void, CoreAudioError>::err(CoreAudioError::Initialize);
-  }
-  UInt32 enabled = 1;
-  if (AudioUnitSetProperty(impl_->unit, kAudioOutputUnitProperty_EnableIO,
-                           kAudioUnitScope_Output, 1, &enabled, sizeof(enabled)) != noErr) {
-    stop();
-    return Result<void, CoreAudioError>::err(CoreAudioError::Format);
   }
   AudioStreamBasicDescription format{};
   format.mSampleRate = 48'000.0;
@@ -103,18 +104,20 @@ Result<void, CoreAudioError> CoreAudioOutput::push(std::span<const float> sample
     return Result<void, CoreAudioError>::err(CoreAudioError::Format);
   }
   std::scoped_lock lock(impl_->mutex);
-  const auto room = impl_->max_samples > impl_->samples.size()
-                        ? impl_->max_samples - impl_->samples.size()
-                        : 0;
-  const auto count = std::min(room, samples.size());
-  impl_->samples.insert(impl_->samples.end(), samples.begin(), samples.begin() + count);
-  return count == samples.size() ? Result<void, CoreAudioError>::ok()
-                                 : Result<void, CoreAudioError>::err(CoreAudioError::Format);
+  if (samples.size() > Impl::kMaxSamples - impl_->sample_count) {
+    return Result<void, CoreAudioError>::err(CoreAudioError::Format);
+  }
+  for (const auto sample : samples) {
+    impl_->samples[impl_->write_index] = sample;
+    impl_->write_index = (impl_->write_index + 1U) % Impl::kMaxSamples;
+  }
+  impl_->sample_count += samples.size();
+  return Result<void, CoreAudioError>::ok();
 }
 
 CoreAudioStats CoreAudioOutput::stats() const noexcept {
   std::scoped_lock lock(impl_->mutex);
-  return {impl_->underruns.load(), impl_->samples.size() / 2U};
+  return {impl_->underruns.load(), impl_->sample_count / 2U};
 }
 
 void CoreAudioOutput::stop() noexcept {
@@ -129,7 +132,9 @@ void CoreAudioOutput::stop() noexcept {
   }
   impl_->started = false;
   std::scoped_lock lock(impl_->mutex);
-  impl_->samples.clear();
+  impl_->read_index = 0;
+  impl_->write_index = 0;
+  impl_->sample_count = 0;
 }
 
 }  // namespace ministream

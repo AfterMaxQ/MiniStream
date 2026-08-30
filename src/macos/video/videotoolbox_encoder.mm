@@ -49,6 +49,60 @@ std::vector<std::byte> annex_b(CMBlockBufferRef block) {
   return result;
 }
 
+std::vector<std::byte> parameter_sets(CMFormatDescriptionRef format, VideoCodec codec) {
+  std::vector<std::byte> result;
+  if (!format) {
+    return result;
+  }
+
+  if (codec == VideoCodec::H264) {
+    size_t count = 0;
+    size_t header_length = 0;
+    const std::uint8_t* first = nullptr;
+    size_t first_size = 0;
+    if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+            format, 0, &first, &first_size, &count, &header_length) != noErr) {
+      return result;
+    }
+    (void)first;
+    (void)first_size;
+    for (size_t index = 0; index < count; ++index) {
+      const std::uint8_t* bytes = nullptr;
+      size_t size = 0;
+      if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+              format, index, &bytes, &size, nullptr, nullptr) != noErr || !bytes || size == 0) {
+        continue;
+      }
+      result.insert(result.end(), {std::byte{0}, std::byte{0}, std::byte{0}, std::byte{1}});
+      result.insert(result.end(), reinterpret_cast<const std::byte*>(bytes),
+                    reinterpret_cast<const std::byte*>(bytes + size));
+    }
+  } else if (codec == VideoCodec::Hevc) {
+    size_t count = 0;
+    size_t header_length = 0;
+    const std::uint8_t* first = nullptr;
+    size_t first_size = 0;
+    if (CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(
+            format, 0, &first, &first_size, &count, &header_length) != noErr) {
+      return result;
+    }
+    (void)first;
+    (void)first_size;
+    for (size_t index = 0; index < count; ++index) {
+      const std::uint8_t* bytes = nullptr;
+      size_t size = 0;
+      if (CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(
+              format, index, &bytes, &size, nullptr, nullptr) != noErr || !bytes || size == 0) {
+        continue;
+      }
+      result.insert(result.end(), {std::byte{0}, std::byte{0}, std::byte{0}, std::byte{1}});
+      result.insert(result.end(), reinterpret_cast<const std::byte*>(bytes),
+                    reinterpret_cast<const std::byte*>(bytes + size));
+    }
+  }
+  return result;
+}
+
 void output_callback(void* refcon, void*, OSStatus status, VTEncodeInfoFlags,
                      CMSampleBufferRef sample) {
   if (status != noErr || !sample || !refcon) {
@@ -75,7 +129,12 @@ void output_callback(void* refcon, void*, OSStatus status, VTEncodeInfoFlags,
                   std::move(bytes)};
   impl->has_latest = true;
   if (keyframe) {
-    impl->codec_config.parameter_sets = impl->latest.bytes;
+    if (const auto format = CMSampleBufferGetFormatDescription(sample)) {
+      auto sets = parameter_sets(format, impl->config.codec);
+      if (!sets.empty()) {
+        impl->codec_config.parameter_sets = std::move(sets);
+      }
+    }
   }
 }
 
@@ -94,9 +153,16 @@ Result<void, VideoEncodeError> VideoToolboxEncoder::start(VideoEncodeConfig conf
   }
   const auto codec = config.codec == VideoCodec::H264 ? kCMVideoCodecType_H264
                                                        : kCMVideoCodecType_HEVC;
+  NSDictionary* source_attributes = @{
+      (__bridge NSString*)kCVPixelBufferPixelFormatTypeKey:
+          @(kCVPixelFormatType_32BGRA),
+      (__bridge NSString*)kCVPixelBufferWidthKey: @(config.width),
+      (__bridge NSString*)kCVPixelBufferHeightKey: @(config.height),
+      (__bridge NSString*)kCVPixelBufferIOSurfacePropertiesKey: @{},
+  };
   if (VTCompressionSessionCreate(kCFAllocatorDefault, config.width, config.height, codec,
-                                 nullptr, nullptr, nullptr, output_callback, impl_.get(),
-                                 &impl_->session) != noErr ||
+                                 nullptr, (__bridge CFDictionaryRef)source_attributes, nullptr,
+                                 output_callback, impl_.get(), &impl_->session) != noErr ||
       !impl_->session) {
     stop();
     return Result<void, VideoEncodeError>::err(VideoEncodeError::Initialize);
@@ -152,10 +218,7 @@ Result<EncodedFrame, VideoEncodeError> VideoToolboxEncoder::encode(
   auto result = std::move(impl_->latest);
   impl_->latest = {};
   impl_->has_latest = false;
-  impl_->next_frame_id = 0;
   result.capture_timestamp_us = timestamp_us;
-  impl_->codec_config.parameter_sets = result.keyframe ? result.bytes
-                                                        : impl_->codec_config.parameter_sets;
   return Result<EncodedFrame, VideoEncodeError>::ok(std::move(result));
 }
 
@@ -170,6 +233,7 @@ void VideoToolboxEncoder::stop() noexcept {
   std::scoped_lock lock(impl_->mutex);
   impl_->latest = {};
   impl_->has_latest = false;
+  impl_->next_frame_id = 0;
   impl_->codec_config = {};
 }
 

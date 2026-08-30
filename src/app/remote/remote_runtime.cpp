@@ -230,6 +230,16 @@ void RemoteRuntime::send_input(const DesktopInput& input) {
   }
 }
 
+void RemoteRuntime::send_gamepad(const GamepadPacket& packet) {
+  if (!session_ || !crypto_) {
+    return;
+  }
+  const auto payload = encode_gamepad_packet(packet);
+  if (const auto sealed = crypto_->seal(PacketType::Input, payload)) {
+    session_->send(sealed->bytes);
+  }
+}
+
 void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
   if (!media_receiver_ || !crypto_ || !backend_) {
     return;
@@ -328,6 +338,15 @@ void RemoteRuntime::tick() {
   if (const auto incoming = session_->try_receive(); incoming) {
     process_datagram(*incoming);
   }
+  if (streaming() && input_capture_.routes_to_remote(InputDevice::Gamepad) && backend_) {
+    const auto now = SteadyClock::now();
+    if (const auto gamepad = backend_->poll_gamepad(); gamepad) {
+      gamepad_coalescer_.update(*gamepad, now);
+    }
+    if (const auto packet = gamepad_coalescer_.flush_if_due(now); packet) {
+      send_gamepad(*packet);
+    }
+  }
 }
 
 void RemoteRuntime::disconnect_session() noexcept {
@@ -338,6 +357,7 @@ void RemoteRuntime::disconnect_session() noexcept {
   codec_configured_ = false;
   expected_audio_sequence_ = 0;
   audio_jitter_ = AudioJitterBuffer{};
+  gamepad_coalescer_ = InputCoalescer{};
   session_keys_.reset();
   identity_.reset();
   ephemeral_.reset();

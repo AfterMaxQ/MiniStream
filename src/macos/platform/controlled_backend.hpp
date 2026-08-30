@@ -3,6 +3,7 @@
 #include "../../platform/controlled_backend.hpp"
 
 #include <memory>
+#include <functional>
 
 namespace ministream {
 

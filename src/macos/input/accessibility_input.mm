@@ -2,6 +2,8 @@
 
 #import <ApplicationServices/ApplicationServices.h>
 
+#include <algorithm>
+
 namespace ministream {
 
 namespace {
@@ -111,7 +113,8 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
     }
     event = CGEventCreateMouseEvent(nullptr, type, location, mouse_button);
   } else if (input.kind == DesktopInputKind::MouseWheel) {
-    event = CGEventCreateScrollWheelEvent(nullptr, kCGScrollEventUnitLine, 1, input.y);
+    const auto lines = std::clamp(input.y / 120, -10, 10);
+    event = CGEventCreateScrollWheelEvent(nullptr, kCGScrollEventUnitLine, 1, lines);
   } else {
     return Result<void, AccessibilityInputError>::err(AccessibilityInputError::InvalidEvent);
   }

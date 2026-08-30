@@ -3,10 +3,13 @@
 #include "core/audio/audio_packet.hpp"
 #include "core/audio/pcm_block.hpp"
 #include "core/input/desktop_input.hpp"
+#include "core/input/gamepad_state.hpp"
+#include "core/input/rumble_packet.hpp"
 #include "core/transport/packetizer.hpp"
 #include "core/video/codec_config.hpp"
 #include "platform/capabilities.hpp"
 
+#include <functional>
 #include <optional>
 
 namespace ministream {
@@ -26,6 +29,8 @@ class ControlledBackend {
   virtual bool configure_video(const CodecConfig&) { return true; }
   [[nodiscard]] virtual std::optional<PcmBlock> next_audio() = 0;
   virtual bool inject_input(const DesktopInput& input) = 0;
+  virtual bool submit_gamepad(const GamepadState&) { return false; }
+  virtual void set_rumble_sender(std::function<void(const RumblePacket&)>) {}
 };
 
 }  // namespace ministream

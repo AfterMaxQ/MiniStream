@@ -6,24 +6,39 @@
 #include "macos/video/video_surface_bridge.hpp"
 #include "macos/video/videotoolbox_decoder.hpp"
 
+#include <VideoToolbox/VideoToolbox.h>
+
 #include <algorithm>
 
 namespace ministream {
 
 struct MacRemoteBackend::Impl {
   std::unique_ptr<VideoToolboxDecoder> decoder;
-  std::unique_ptr<VideoSurfaceBridge> surface;
+  std::unique_ptr<VideoSurfaceBridge> owned_surface;
+  VideoSurfaceBridge* surface{};
   std::unique_ptr<CoreAudioOutput> audio;
   std::unique_ptr<SdlGamepad> gamepad;
   bool started{};
 };
 
-MacRemoteBackend::MacRemoteBackend() : impl_(std::make_unique<Impl>()) {}
+MacRemoteBackend::MacRemoteBackend(VideoSurfaceBridge* surface)
+    : impl_(std::make_unique<Impl>()) {
+  if (surface) {
+    impl_->surface = surface;
+  } else {
+    impl_->owned_surface = std::make_unique<VideoSurfaceBridge>();
+    impl_->surface = impl_->owned_surface.get();
+  }
+}
 MacRemoteBackend::~MacRemoteBackend() { stop(); }
 
 RemoteCapabilities MacRemoteBackend::inspect() const {
   const auto network = UdpEndpoint{}.bind(0);
-  return {{true, "VideoToolbox hardware decoder"},
+  const bool h264 = VTIsHardwareDecodeSupported(kCMVideoCodecType_H264);
+  const bool hevc = VTIsHardwareDecodeSupported(kCMVideoCodecType_HEVC);
+  const bool video_ready = h264 || hevc;
+  return {{video_ready, video_ready ? "VideoToolbox hardware decoder detected"
+                                    : "Hardware H.264/HEVC decoder unavailable"},
           {true, "CoreAudio output"},
           {true, "Window-local keyboard and mouse"},
           {network.has_value(), network ? "UDP available" : "UDP socket unavailable"}};
@@ -32,7 +47,10 @@ RemoteCapabilities MacRemoteBackend::inspect() const {
 bool MacRemoteBackend::start() {
   if (impl_->started) return true;
   impl_->decoder = std::make_unique<VideoToolboxDecoder>();
-  impl_->surface = std::make_unique<VideoSurfaceBridge>();
+  if (!impl_->surface) {
+    impl_->owned_surface = std::make_unique<VideoSurfaceBridge>();
+    impl_->surface = impl_->owned_surface.get();
+  }
   impl_->audio = std::make_unique<CoreAudioOutput>();
   impl_->gamepad = std::make_unique<SdlGamepad>();
   if (!impl_->audio->start()) {
@@ -49,7 +67,9 @@ void MacRemoteBackend::stop() noexcept {
   if (impl_->decoder) impl_->decoder->stop();
   impl_->gamepad.reset();
   impl_->audio.reset();
-  impl_->surface.reset();
+  if (impl_->surface) {
+    impl_->surface->clear();
+  }
   impl_->decoder.reset();
   impl_->started = false;
 }
@@ -78,6 +98,10 @@ void MacRemoteBackend::play_rumble(std::uint16_t low, std::uint16_t high,
   if (impl_->gamepad) {
     impl_->gamepad->rumble(low, high, Microseconds{static_cast<std::int64_t>(duration_ms) * 1000});
   }
+}
+
+std::optional<GamepadState> MacRemoteBackend::poll_gamepad() {
+  return impl_->gamepad ? impl_->gamepad->poll_latest() : std::nullopt;
 }
 
 }  // namespace ministream

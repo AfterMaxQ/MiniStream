@@ -6,14 +6,17 @@
 #include <array>
 #include <chrono>
 #include <mutex>
-#include <vector>
 
 namespace ministream {
 
 struct CoreAudioCapture::Impl {
   AudioUnit unit{};
   mutable std::mutex mutex;
-  std::vector<float> samples;
+  static constexpr std::size_t kMaxSamples = 48'000U * 2U / 5U;  // 200 ms
+  std::array<float, kMaxSamples> samples{};
+  std::size_t read_index{};
+  std::size_t write_index{};
+  std::size_t sample_count{};
   bool started{};
 };
 
@@ -34,14 +37,16 @@ OSStatus input_callback(void* refcon, AudioUnitRenderActionFlags*, const AudioTi
     return noErr;
   }
   std::scoped_lock lock(impl->mutex);
-  constexpr std::size_t max_samples = 48'000U * 2U / 5U;
-  if (impl->samples.size() + frames * 2U > max_samples) {
-    const auto drop = impl->samples.size() + frames * 2U - max_samples;
-    impl->samples.erase(impl->samples.begin(), impl->samples.begin() +
-                                             static_cast<std::ptrdiff_t>(drop));
+  const auto incoming = static_cast<std::size_t>(frames) * 2U;
+  for (std::size_t i = 0; i < incoming; ++i) {
+    if (impl->sample_count == Impl::kMaxSamples) {
+      impl->read_index = (impl->read_index + 1U) % Impl::kMaxSamples;
+      --impl->sample_count;
+    }
+    impl->samples[impl->write_index] = buffer[i];
+    impl->write_index = (impl->write_index + 1U) % Impl::kMaxSamples;
+    ++impl->sample_count;
   }
-  impl->samples.insert(impl->samples.end(), buffer.begin(),
-                       buffer.begin() + static_cast<std::ptrdiff_t>(frames * 2U));
   return noErr;
 }
 }  // namespace
@@ -98,7 +103,7 @@ Result<PcmBlock, CoreAudioCaptureError> CoreAudioCapture::read() {
   }
   constexpr std::size_t frame_samples = 480U * 2U;
   std::scoped_lock lock(impl_->mutex);
-  if (impl_->samples.size() < frame_samples) {
+  if (impl_->sample_count < frame_samples) {
     return Result<PcmBlock, CoreAudioCaptureError>::err(CoreAudioCaptureError::NoData);
   }
   PcmBlock block;
@@ -107,9 +112,12 @@ Result<PcmBlock, CoreAudioCaptureError> CoreAudioCapture::read() {
           std::chrono::steady_clock::now().time_since_epoch())
           .count());
   block.frames = 480;
-  block.interleaved_stereo.assign(impl_->samples.begin(),
-                                  impl_->samples.begin() + frame_samples);
-  impl_->samples.erase(impl_->samples.begin(), impl_->samples.begin() + frame_samples);
+  block.interleaved_stereo.resize(frame_samples);
+  for (std::size_t i = 0; i < frame_samples; ++i) {
+    block.interleaved_stereo[i] = impl_->samples[impl_->read_index];
+    impl_->read_index = (impl_->read_index + 1U) % Impl::kMaxSamples;
+  }
+  impl_->sample_count -= frame_samples;
   return Result<PcmBlock, CoreAudioCaptureError>::ok(std::move(block));
 }
 
@@ -123,7 +131,9 @@ void CoreAudioCapture::stop() noexcept {
   }
   impl_->started = false;
   std::scoped_lock lock(impl_->mutex);
-  impl_->samples.clear();
+  impl_->read_index = 0;
+  impl_->write_index = 0;
+  impl_->sample_count = 0;
 }
 
 }  // namespace ministream

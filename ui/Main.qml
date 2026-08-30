@@ -29,36 +29,24 @@ ApplicationWindow {
         onActivated: window.toggleFullscreen()
     }
 
-    Keys.onPressed: function(event) {
-        if (roleController.remoteInputActive && !event.isAutoRepeat) {
-            roleController.routeKey(event.key, true)
-            event.accepted = true
-        }
-    }
-    Keys.onReleased: function(event) {
-        if (roleController.remoteInputActive && !event.isAutoRepeat) {
-            roleController.routeKey(event.key, false)
-            event.accepted = true
-        }
-    }
     Shortcut {
         sequence: "Ctrl+Alt+R"
-        enabled: Qt.platform.os !== "osx"
+        enabled: Qt.platform.os !== "osx" && !roleController.remoteInputActive
         onActivated: roleController.toggleRemoteInput()
     }
     Shortcut {
         sequence: "Meta+Alt+R"
-        enabled: Qt.platform.os === "osx"
+        enabled: Qt.platform.os === "osx" && !roleController.remoteInputActive
         onActivated: roleController.toggleRemoteInput()
     }
     Shortcut {
         sequence: "Ctrl+Alt+F"
-        enabled: Qt.platform.os !== "osx"
+        enabled: Qt.platform.os !== "osx" && !roleController.remoteInputActive
         onActivated: window.toggleFullscreen()
     }
     Shortcut {
         sequence: "Meta+Alt+F"
-        enabled: Qt.platform.os === "osx"
+        enabled: Qt.platform.os === "osx" && !roleController.remoteInputActive
         onActivated: window.toggleFullscreen()
     }
     Shortcut {

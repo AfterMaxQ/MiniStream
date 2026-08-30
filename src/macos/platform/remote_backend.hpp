@@ -13,7 +13,7 @@ class SdlGamepad;
 
 class MacRemoteBackend final : public RemoteBackend {
  public:
-  MacRemoteBackend();
+  explicit MacRemoteBackend(VideoSurfaceBridge* surface = nullptr);
   ~MacRemoteBackend() override;
 
   [[nodiscard]] RemoteCapabilities inspect() const override;
@@ -25,6 +25,7 @@ class MacRemoteBackend final : public RemoteBackend {
   bool play_audio(std::span<const float> interleaved_stereo) override;
   void play_rumble(std::uint16_t low, std::uint16_t high,
                    std::uint32_t duration_ms) override;
+  std::optional<GamepadState> poll_gamepad() override;
 
  private:
   struct Impl;

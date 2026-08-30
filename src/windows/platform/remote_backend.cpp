@@ -10,6 +10,7 @@
 #include <Xinput.h>
 
 #include <algorithm>
+#include <utility>
 
 namespace ministream {
 
@@ -17,6 +18,7 @@ struct WindowsRemoteBackend::Impl {
   std::unique_ptr<MfDecoder> decoder;
   std::unique_ptr<D3D11VideoSurface> surface;
   std::unique_ptr<WasapiOutput> audio;
+  std::function<void()> surface_notifier;
   bool started{};
 };
 
@@ -80,6 +82,9 @@ bool WindowsRemoteBackend::decode_video(std::span<const std::byte> encoded,
   }
   if (const auto frame = impl_->decoder->take_latest(); frame) {
     impl_->surface->publish({frame->texture, frame->timestamp_us, frame->width, frame->height});
+    if (impl_->surface_notifier) {
+      impl_->surface_notifier();
+    }
   }
   return true;
 }
@@ -98,6 +103,46 @@ void WindowsRemoteBackend::play_rumble(std::uint16_t low, std::uint16_t high,
     // The input path is intentionally non-blocking.  Windows will clear the
     // motor on the next feedback packet or when the session stops.
   }
+}
+
+std::optional<GamepadState> WindowsRemoteBackend::poll_gamepad() {
+  XINPUT_STATE state{};
+  if (XInputGetState(0, &state) != ERROR_SUCCESS) {
+    return std::nullopt;
+  }
+  const auto buttons = state.Gamepad.wButtons;
+  std::uint32_t mapped = 0;
+  mapped |= (buttons & XINPUT_GAMEPAD_DPAD_UP) ? kGamepadDpadUp : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_DPAD_DOWN) ? kGamepadDpadDown : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_DPAD_LEFT) ? kGamepadDpadLeft : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_DPAD_RIGHT) ? kGamepadDpadRight : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_START) ? kGamepadStart : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_BACK) ? kGamepadBack : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_LEFT_THUMB) ? kGamepadLeftThumb : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_RIGHT_THUMB) ? kGamepadRightThumb : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_LEFT_SHOULDER) ? kGamepadLeftShoulder : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_RIGHT_SHOULDER) ? kGamepadRightShoulder : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_A) ? kGamepadA : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_B) ? kGamepadB : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_X) ? kGamepadX : 0U;
+  mapped |= (buttons & XINPUT_GAMEPAD_Y) ? kGamepadY : 0U;
+  return GamepadState{mapped,
+                      static_cast<std::uint16_t>(state.Gamepad.bLeftTrigger * 257U),
+                      static_cast<std::uint16_t>(state.Gamepad.bRightTrigger * 257U),
+                      state.Gamepad.sThumbLX, state.Gamepad.sThumbLY,
+                      state.Gamepad.sThumbRX, state.Gamepad.sThumbRY};
+}
+
+std::optional<D3D11SurfaceFrame> WindowsRemoteBackend::take_surface_frame() {
+  return impl_->surface ? impl_->surface->take_latest() : std::nullopt;
+}
+
+bool WindowsRemoteBackend::surface_available() const noexcept {
+  return impl_->surface && impl_->surface->available();
+}
+
+void WindowsRemoteBackend::set_surface_notifier(std::function<void()> notifier) {
+  impl_->surface_notifier = std::move(notifier);
 }
 
 }  // namespace ministream

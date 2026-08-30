@@ -185,10 +185,11 @@ Result<void, VideoDecodeError> VideoToolboxDecoder::decode(
   const auto pts = CMTimeMake(static_cast<int64_t>(timestamp_us), 1'000'000);
   CMSampleTimingInfo timing{CMTimeMake(1, static_cast<int32_t>(impl_->config.fps)), pts,
                             kCMTimeInvalid};
+  const auto sample_size = avcc.size();
   CMSampleBufferRef sample{};
   const auto sample_status = CMSampleBufferCreateReady(kCFAllocatorDefault, block,
-                                                        impl_->format, 1, 1, &timing, 0, nullptr,
-                                                        &sample);
+                                                        impl_->format, 1, 1, &timing, 1,
+                                                        &sample_size, &sample);
   CFRelease(block);
   if (sample_status != noErr) {
     return Result<void, VideoDecodeError>::err(VideoDecodeError::Decode);

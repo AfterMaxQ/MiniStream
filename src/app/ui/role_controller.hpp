@@ -40,6 +40,8 @@ class RoleController final : public QObject {
   Q_PROPERTY(QString audioDetail READ audioDetail NOTIFY stateChanged)
   Q_PROPERTY(QString inputDetail READ inputDetail NOTIFY stateChanged)
   Q_PROPERTY(QString networkDetail READ networkDetail NOTIFY stateChanged)
+  Q_PROPERTY(bool permissionActionAvailable READ permissionActionAvailable NOTIFY stateChanged)
+  Q_PROPERTY(QObject* videoSurface READ videoSurface NOTIFY stateChanged)
 
  public:
   explicit RoleController(QObject* parent = nullptr);
@@ -69,6 +71,8 @@ class RoleController final : public QObject {
   [[nodiscard]] QString audioDetail() const;
   [[nodiscard]] QString inputDetail() const;
   [[nodiscard]] QString networkDetail() const;
+  [[nodiscard]] bool permissionActionAvailable() const noexcept;
+  [[nodiscard]] QObject* videoSurface() const noexcept;
 
   Q_INVOKABLE void startBroadcast();
   Q_INVOKABLE void stopBroadcast();
@@ -84,6 +88,7 @@ class RoleController final : public QObject {
   Q_INVOKABLE void routeMouseButton(int button, bool pressed);
   Q_INVOKABLE void routeMouseWheel(int delta);
   Q_INVOKABLE void disconnect();
+  Q_INVOKABLE void openPermissionSettings();
 
  signals:
   void modeChanged();
@@ -100,6 +105,9 @@ class RoleController final : public QObject {
   QString failure_text_;
   QTimer tick_timer_;
 #if defined(_WIN32) || defined(__APPLE__)
+  // The object is a small Qt-facing adapter around the platform's latest
+  // native texture. It is kept before the runtimes so it outlives them.
+  std::unique_ptr<QObject> video_surface_;
   std::unique_ptr<ControlledRuntime> controlled_;
   std::unique_ptr<RemoteRuntime> remote_;
 #endif

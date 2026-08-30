@@ -3,6 +3,7 @@
 #include "core/audio/audio_packet.hpp"
 #include "core/audio/opus_codec.hpp"
 #include "core/input/desktop_input.hpp"
+#include "core/input/gamepad_packet.hpp"
 #include "core/media/media_pipeline.hpp"
 #include "core/net/udp_endpoint.hpp"
 #include "core/security/identity.hpp"
@@ -50,6 +51,7 @@ class ControlledRuntime {
   void process_datagram(const ReceivedDatagram& incoming);
   void send_pending_audio(SteadyClock::time_point now);
   void send_pending_video(SteadyClock::time_point now);
+  void send_rumble(const RumblePacket& packet);
 
   std::unique_ptr<ControlledBackend> backend_;
   DiscoveryAdvertisement advertisement_;
@@ -62,6 +64,7 @@ class ControlledRuntime {
   std::unique_ptr<OpusEncoder48kStereo> audio_encoder_;
   std::vector<float> audio_pending_;
   std::uint32_t audio_sequence_{};
+  GamepadSequenceFilter gamepad_sequence_filter_;
   std::optional<DeviceIdentity> identity_;
   std::optional<EphemeralKeyPair> ephemeral_;
   std::optional<PairingOffer> peer_offer_;

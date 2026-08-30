@@ -1,6 +1,8 @@
 #include "app/controlled/controlled_runtime.hpp"
 
 #include "core/protocol/wire.hpp"
+#include "core/input/gamepad_packet.hpp"
+#include "core/input/rumble_packet.hpp"
 #include "core/video/codec_config_wire.hpp"
 
 #include <chrono>
@@ -36,6 +38,8 @@ bool ControlledRuntime::start() {
     backend_->stop();
     return false;
   }
+  backend_->set_rumble_sender(
+      [this](const RumblePacket& packet) { send_rumble(packet); });
 
   discovery_ = std::make_unique<DiscoveryHost>();
   session_ = std::make_unique<UdpEndpoint>();
@@ -68,6 +72,7 @@ void ControlledRuntime::stop() noexcept {
   audio_encoder_.reset();
   audio_pending_.clear();
   audio_sequence_ = 0;
+  gamepad_sequence_filter_ = GamepadSequenceFilter{};
   discovery_.reset();
   session_.reset();
   identity_.reset();
@@ -156,6 +161,9 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
       if (const auto payload = crypto_->open(incoming.datagram); payload) {
         if (const auto input = decode_desktop_input(*payload); input && backend_) {
           backend_->inject_input(*input);
+        } else if (const auto gamepad = decode_gamepad_packet(*payload); gamepad && backend_ &&
+                   gamepad_sequence_filter_.accept(gamepad->sequence)) {
+          backend_->submit_gamepad(gamepad->state);
         }
       }
       return;
@@ -257,6 +265,16 @@ void ControlledRuntime::send_pending_audio(SteadyClock::time_point now) {
     }
     audio_pending_.erase(audio_pending_.begin(),
                          audio_pending_.begin() + kOpusFrameSamplesPerChannel * 2U);
+  }
+}
+
+void ControlledRuntime::send_rumble(const RumblePacket& packet) {
+  if (!session_ || !crypto_ || !streaming()) {
+    return;
+  }
+  const auto payload = encode_rumble_packet(packet);
+  if (const auto sealed = crypto_->seal(PacketType::Feedback, payload)) {
+    session_->reply(sealed->bytes);
   }
 }
 

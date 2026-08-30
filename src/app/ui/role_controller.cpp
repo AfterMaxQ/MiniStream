@@ -7,14 +7,18 @@
 #include "windows/platform/controlled_backend.hpp"
 #include "windows/platform/remote_backend.hpp"
 #include "windows/input/window_input_source.hpp"
+#include "app/ui/windows_video_surface_bridge.hpp"
 #endif
 #ifdef __APPLE__
 #include "macos/platform/controlled_backend.hpp"
 #include "macos/platform/remote_backend.hpp"
 #include "macos/input/accessibility_input.hpp"
+#include "macos/video/video_surface_bridge.hpp"
 #endif
 
 #include <QSysInfo>
+#include <QDesktopServices>
+#include <QUrl>
 
 #include <algorithm>
 #include <string>
@@ -100,16 +104,20 @@ RoleController::RoleController(QObject* parent) : QObject(parent) {
       std::move(controlled_backend), controlled_advertisement(controlled_capabilities_));
 
   auto remote_backend = std::make_unique<WindowsRemoteBackend>();
+  auto* remote_backend_ptr = remote_backend.get();
   remote_capabilities_ = remote_backend->inspect();
   remote_ = std::make_unique<RemoteRuntime>(std::move(remote_backend));
+  video_surface_ = std::make_unique<WindowsVideoSurfaceBridge>(remote_backend_ptr);
   mode_ = RoleMode::Controlled;
 #endif
 #ifdef __APPLE__
+  video_surface_ = std::make_unique<VideoSurfaceBridge>();
   auto controlled_backend = std::make_unique<MacControlledBackend>();
   controlled_capabilities_ = controlled_backend->inspect();
   controlled_ = std::make_unique<ControlledRuntime>(
       std::move(controlled_backend), controlled_advertisement(controlled_capabilities_));
-  auto remote_backend = std::make_unique<MacRemoteBackend>();
+  auto* video_surface = static_cast<VideoSurfaceBridge*>(video_surface_.get());
+  auto remote_backend = std::make_unique<MacRemoteBackend>(video_surface);
   remote_capabilities_ = remote_backend->inspect();
   remote_ = std::make_unique<RemoteRuntime>(std::move(remote_backend));
   mode_ = RoleMode::Remote;
@@ -382,6 +390,29 @@ QString RoleController::networkDetail() const {
                                                         : remote_capabilities_.network);
 }
 
+bool RoleController::permissionActionAvailable() const noexcept {
+#ifdef __APPLE__
+  if (mode_ != RoleMode::Controlled) {
+    return false;
+  }
+  const auto has_permission_detail = [](const PlatformCapability& capability) {
+    return capability.detail.find("permission required") != std::string::npos;
+  };
+  return has_permission_detail(controlled_capabilities_.video) ||
+         has_permission_detail(controlled_capabilities_.input);
+#else
+  return false;
+#endif
+}
+
+QObject* RoleController::videoSurface() const noexcept {
+#if defined(_WIN32) || defined(__APPLE__)
+  return video_surface_.get();
+#else
+  return nullptr;
+#endif
+}
+
 void RoleController::startBroadcast() {
 #if defined(_WIN32) || defined(__APPLE__)
   if (mode_ != RoleMode::Controlled || !controlled_) {
@@ -626,6 +657,19 @@ void RoleController::disconnect() {
   cleanupCurrentMode();
   failure_text_.clear();
   emit stateChanged();
+}
+
+void RoleController::openPermissionSettings() {
+#ifdef __APPLE__
+  const auto video_needs_access = controlled_capabilities_.video.detail.find(
+      "permission required") != std::string::npos;
+  const auto url = video_needs_access
+                       ? QUrl(QStringLiteral(
+                             "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"))
+                       : QUrl(QStringLiteral(
+                             "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"));
+  QDesktopServices::openUrl(url);
+#endif
 }
 
 void RoleController::tick() {

@@ -12,6 +12,9 @@ add_library(
   audio/coreaudio_output.mm
   audio/coreaudio_capture.mm
 )
+if(NOT MINISTREAM_BUILD_UI)
+  find_package(Qt6 ${MINISTREAM_QT_VERSION} REQUIRED COMPONENTS Core)
+endif()
 target_include_directories(ministream_macos_platform PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(
   ministream_macos_platform
@@ -20,15 +23,25 @@ target_link_libraries(
           "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation"
           "-framework CoreGraphics" "-framework ApplicationServices" "-framework IOSurface"
 )
+if(NOT MINISTREAM_BUILD_UI)
+  target_link_libraries(ministream_macos_platform PUBLIC Qt6::Core)
+endif()
+set_target_properties(ministream_macos_platform PROPERTIES AUTOMOC ON)
 ministream_set_warnings(ministream_macos_platform)
 
 if(MINISTREAM_BUILD_UI)
+  set_source_files_properties(
+    "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.mm"
+    PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
+  )
   qt_add_executable(
     ministream
     MACOSX_BUNDLE
     "${PROJECT_SOURCE_DIR}/src/app/qt_main.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.hpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.mm"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.hpp"
   )
   target_link_libraries(
     ministream

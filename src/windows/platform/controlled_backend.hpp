@@ -3,6 +3,7 @@
 #include "../../platform/controlled_backend.hpp"
 
 #include <memory>
+#include <functional>
 
 namespace ministream {
 
@@ -27,6 +28,8 @@ class WindowsControlledBackend final : public ControlledBackend {
   [[nodiscard]] CodecConfig codec_config() const override;
   [[nodiscard]] std::optional<PcmBlock> next_audio() override;
   bool inject_input(const DesktopInput& input) override;
+  bool submit_gamepad(const GamepadState& state) override;
+  void set_rumble_sender(std::function<void(const RumblePacket&)> sender) override;
 
  private:
   struct Impl;

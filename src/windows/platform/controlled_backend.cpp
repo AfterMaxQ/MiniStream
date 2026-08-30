@@ -24,6 +24,7 @@ struct WindowsControlledBackend::Impl {
   CodecConfig active{};
   bool started{};
   bool configured{};
+  std::function<void(const RumblePacket&)> rumble_sender;
 };
 
 WindowsControlledBackend::WindowsControlledBackend() : impl_(std::make_unique<Impl>()) {}
@@ -53,6 +54,12 @@ bool WindowsControlledBackend::start() {
   // ViGEm is optional.  A keyboard/mouse-only session must still start.
   if (!impl_->gamepad->start()) {
     impl_->gamepad.reset();
+  } else if (impl_->rumble_sender) {
+    impl_->gamepad->set_rumble_callback([this](const RumbleState& state) {
+      if (impl_->rumble_sender) {
+        impl_->rumble_sender({state.low, state.high, 0});
+      }
+    });
   }
   impl_->encoder = std::make_unique<NvencEncoder>();
   impl_->requested = {};
@@ -155,6 +162,22 @@ std::optional<PcmBlock> WindowsControlledBackend::next_audio() {
 
 bool WindowsControlledBackend::inject_input(const DesktopInput& input) {
   return impl_->started && impl_->input && impl_->input->inject(input);
+}
+
+bool WindowsControlledBackend::submit_gamepad(const GamepadState& state) {
+  return impl_->started && impl_->gamepad && impl_->gamepad->submit(state);
+}
+
+void WindowsControlledBackend::set_rumble_sender(
+    std::function<void(const RumblePacket&)> sender) {
+  impl_->rumble_sender = std::move(sender);
+  if (impl_->gamepad && impl_->rumble_sender) {
+    impl_->gamepad->set_rumble_callback([this](const RumbleState& state) {
+      if (impl_->rumble_sender) {
+        impl_->rumble_sender({state.low, state.high, 0});
+      }
+    });
+  }
 }
 
 }  // namespace ministream

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QObject>
 #include <CoreVideo/CoreVideo.h>
 
 #include <cstdint>
@@ -13,14 +14,21 @@ struct SurfaceFrame {
   std::uint64_t timestamp_us{};
 };
 
-class VideoSurfaceBridge {
+class VideoSurfaceBridge : public QObject {
+  Q_OBJECT
+  Q_PROPERTY(bool frameAvailable READ frameAvailable NOTIFY frameAvailableChanged)
+
  public:
-  VideoSurfaceBridge() = default;
-  ~VideoSurfaceBridge();
+  explicit VideoSurfaceBridge(QObject* parent = nullptr);
+  ~VideoSurfaceBridge() override;
 
   [[nodiscard]] bool frameAvailable() const noexcept;
   void publish(CVPixelBufferRef pixel_buffer, std::uint64_t timestamp_us);
   std::optional<SurfaceFrame> take();
+  void clear() noexcept;
+
+ signals:
+  void frameAvailableChanged();
 
  private:
   mutable std::mutex mutex_;

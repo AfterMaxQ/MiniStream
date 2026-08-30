@@ -5,6 +5,8 @@
 #include "core/audio/jitter_buffer.hpp"
 #include "core/audio/opus_codec.hpp"
 #include "core/input/desktop_input.hpp"
+#include "core/input/gamepad_packet.hpp"
+#include "core/input/input_coalescer.hpp"
 #include "core/input/input_capture.hpp"
 #include "core/input/remote_input_router.hpp"
 #include "core/media/media_pipeline.hpp"
@@ -61,6 +63,7 @@ class RemoteRuntime {
   void process_datagram(const ReceivedDatagram& incoming);
   void poll_media(const ReceivedDatagram& incoming);
   void send_input(const DesktopInput& input);
+  void send_gamepad(const GamepadPacket& packet);
 
   std::unique_ptr<RemoteBackend> backend_;
   RoleState state_{RoleState::Idle};
@@ -81,6 +84,7 @@ class RemoteRuntime {
   std::string pairing_code_;
   InputCapture input_capture_;
   std::unique_ptr<RemoteInputRouter> input_router_;
+  InputCoalescer gamepad_coalescer_;
   SessionId session_id_{1};
   bool codec_configured_{};
 };

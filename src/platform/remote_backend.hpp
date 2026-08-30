@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 namespace ministream {
@@ -23,6 +24,7 @@ class RemoteBackend {
   virtual bool play_audio(std::span<const float> interleaved_stereo) = 0;
   virtual void play_rumble(std::uint16_t low, std::uint16_t high,
                            std::uint32_t duration_ms) = 0;
+  virtual std::optional<GamepadState> poll_gamepad() { return std::nullopt; }
 };
 
 }  // namespace ministream

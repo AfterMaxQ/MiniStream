@@ -8,6 +8,7 @@
 #include "macos/video/videotoolbox_encoder.hpp"
 
 #include <ApplicationServices/ApplicationServices.h>
+#include <VideoToolbox/VideoToolbox.h>
 
 #include <algorithm>
 #include <utility>
@@ -35,8 +36,14 @@ ControlledCapabilities MacControlledBackend::inspect() const {
     screen_permission = CGPreflightScreenCaptureAccess();
   }
   const bool trusted = AccessibilityInput::trusted();
-  return {{screen_permission, screen_permission ? "Screen capture available"
-                                                 : "Screen Recording permission required"},
+  const bool h264 = VTIsHardwareEncodeSupported(kCMVideoCodecType_H264);
+  const bool hevc = VTIsHardwareEncodeSupported(kCMVideoCodecType_HEVC);
+  const bool video_ready = screen_permission && (h264 || hevc);
+  const auto video_detail = !screen_permission
+                                ? "Screen Recording permission required"
+                                : (video_ready ? "VideoToolbox hardware encoder detected"
+                                               : "Hardware H.264/HEVC encoder unavailable");
+  return {{video_ready, video_detail},
           {true, "CoreAudio microphone input"},
           {trusted, trusted ? "Accessibility input available"
                             : "Accessibility permission required"},
