@@ -22,17 +22,17 @@ Item {
             }
             AppButton {
                 id: refreshButton
-                text: root.controller.searching ? "Searching" : "Find PCs"
+                text: root.controller.searching ? "Searching" : "Find devices"
                 enabled: !root.controller.searching
                 onClicked: root.controller.refreshHosts()
             }
         }
 
-        SectionHeader { text: "Windows PCs" }
+        SectionHeader { text: "Nearby devices" }
 
         Rectangle {
             width: parent.width
-            height: Math.max(96, hostList.contentHeight)
+            height: Math.min(280, Math.max(96, hostList.contentHeight))
             radius: Tokens.radius10
             color: Tokens.surface
             border.color: Tokens.border
@@ -48,19 +48,37 @@ Item {
                 delegate: Item {
                     required property int index
                     required property var modelData
+                    property var cardLines: String(modelData).split("\n")
                     width: hostList.width
-                    height: 56
+                    height: Math.max(56, details.implicitHeight + Tokens.space16)
 
                     Row {
+                        id: detailsRow
                         anchors.fill: parent
-                        anchors.leftMargin: Tokens.space8
-                        anchors.rightMargin: Tokens.space8
-                        Text {
-                            width: parent.width - connectButton.width - Tokens.space12
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: modelData
-                            color: Tokens.text
-                            font.pixelSize: 14
+                        anchors.margins: Tokens.space8
+                        spacing: Tokens.space12
+
+                        Column {
+                            id: details
+                            width: Math.max(0, detailsRow.width - connectButton.width - detailsRow.spacing)
+                            spacing: Tokens.space4
+
+                            Text {
+                                width: parent.width
+                                text: cardLines.length > 0 ? cardLines[0] : ""
+                                color: Tokens.text
+                                font.pixelSize: 14
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                width: parent.width
+                                text: cardLines.length > 1 ? cardLines[1] : ""
+                                color: Tokens.textMuted
+                                font.pixelSize: 12
+                                wrapMode: Text.WordWrap
+                                maximumLineCount: 2
+                                elide: Text.ElideRight
+                            }
                         }
                         AppButton {
                             id: connectButton
@@ -87,7 +105,7 @@ Item {
 
             AppButton {
                 id: remoteButton
-                text: root.controller.remoteInputActive ? "Use this Mac" : "Control remote"
+                text: root.controller.remoteInputActive ? "Use this device" : "Control remote"
                 enabled: root.controller.connected
                 onClicked: root.controller.toggleRemoteInput()
             }
@@ -95,11 +113,12 @@ Item {
                 width: parent.width - remoteButton.width - Tokens.space12
                 visible: root.controller.connected
                 text: root.controller.remoteInputActive
-                      ? "Keyboard, mouse, and controller are routed to the PC."
-                      : "Input stays on this Mac."
+                      ? "Input sent to " + root.controller.selectedDeviceLabel
+                      : "Input stays on this device."
                 color: Tokens.textMuted
                 font.pixelSize: 13
                 anchors.verticalCenter: parent.verticalCenter
+                wrapMode: Text.WordWrap
                 elide: Text.ElideRight
             }
         }

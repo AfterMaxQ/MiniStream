@@ -36,6 +36,7 @@ class ClientController : public QObject {
   Q_PROPERTY(bool pairing READ pairing NOTIFY pairingChanged)
   Q_PROPERTY(bool remoteInputActive READ remoteInputActive NOTIFY remoteInputChanged)
   Q_PROPERTY(QString pairingCode READ pairingCode NOTIFY pairingChanged)
+  Q_PROPERTY(QString selectedDeviceLabel READ selectedDeviceLabel NOTIFY selectedDeviceChanged)
   Q_PROPERTY(QObject* videoSurface READ videoSurface CONSTANT)
 
  public:
@@ -48,6 +49,7 @@ class ClientController : public QObject {
   [[nodiscard]] bool pairing() const noexcept;
   [[nodiscard]] bool remoteInputActive() const noexcept;
   [[nodiscard]] QString pairingCode() const;
+  [[nodiscard]] QString selectedDeviceLabel() const;
   [[nodiscard]] QObject* videoSurface() const noexcept;
 
   Q_INVOKABLE void refreshHosts();
@@ -63,6 +65,7 @@ class ClientController : public QObject {
   void connectedChanged();
   void pairingChanged();
   void remoteInputChanged();
+  void selectedDeviceChanged();
 
  private:
   void disconnectSession();
@@ -78,6 +81,7 @@ class ClientController : public QObject {
   bool connected_{};
   bool pairing_{};
   QString pairing_code_;
+  QString selected_device_label_;
   QTimer poll_timer_;
   std::unique_ptr<UdpEndpoint> session_;
   std::optional<DeviceIdentity> identity_;

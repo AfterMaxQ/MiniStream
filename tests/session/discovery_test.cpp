@@ -46,3 +46,18 @@ TEST_CASE("LAN discovery query is versioned and rejects unrelated traffic") {
   unrelated[0] = std::byte{0};
   REQUIRE_FALSE(is_discovery_query(unrelated));
 }
+
+TEST_CASE("discovered device formatting shows stream parameters without gamepad details") {
+  const DiscoveredHost host{DiscoverySystem::Windows,
+                            "Living Room PC",
+                            "192.168.1.20",
+                            48000,
+                            DiscoveryCapabilities{true, true, true, true, true, true},
+                            3840,
+                            2160,
+                            60,
+                            true};
+  REQUIRE(format_discovered_host(host) ==
+          "Windows | Living Room PC\nH.264/HEVC | 3840x2160 60 fps | HDR10 | Audio");
+  REQUIRE(format_discovered_host(host).find("gamepad") == std::string::npos);
+}

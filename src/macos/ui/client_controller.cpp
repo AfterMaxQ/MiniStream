@@ -20,6 +20,12 @@ std::uint64_t random_nonce() {
   return (static_cast<std::uint64_t>(random()) << 32U) | random();
 }
 
+QString identity_label(const DiscoveredHost& host) {
+  const auto card = format_discovered_host(host);
+  const auto line_break = card.find('\n');
+  return QString::fromStdString(card.substr(0, line_break));
+}
+
 }  // namespace
 
 ClientController::ClientController(QObject* parent) : QObject(parent) {
@@ -120,6 +126,7 @@ bool ClientController::remoteInputActive() const noexcept {
   return input_capture_.remote();
 }
 QString ClientController::pairingCode() const { return pairing_code_; }
+QString ClientController::selectedDeviceLabel() const { return selected_device_label_; }
 
 void ClientController::refreshHosts() {
   if (searching_) {
@@ -132,9 +139,9 @@ void ClientController::refreshHosts() {
   if (const auto result = discover_hosts(std::chrono::milliseconds{250})) {
     discovered_ = *result;
     for (const auto& host : discovered_) {
-      host_labels_.push_back(QStringLiteral("%1  %2")
-                                 .arg(QString::fromStdString(host.name),
-                                      QString::fromStdString(host.address)));
+      if (host.controllable) {
+        host_labels_.push_back(QString::fromStdString(format_discovered_host(host)));
+      }
     }
   }
   searching_ = false;
@@ -149,6 +156,8 @@ void ClientController::connectToHost(int index) {
   disconnectSession();
   session_ = std::make_unique<UdpEndpoint>();
   const auto& host = discovered_[static_cast<std::size_t>(index)];
+  selected_device_label_ = identity_label(host);
+  emit selectedDeviceChanged();
   if (!session_->bind(0) || !session_->set_remote(host.address, host.session_port)) {
     disconnectSession();
     return;
@@ -298,6 +307,10 @@ void ClientController::disconnectSession() {
   connected_ = false;
   if (was_connected) {
     emit connectedChanged();
+  }
+  if (!selected_device_label_.isEmpty()) {
+    selected_device_label_.clear();
+    emit selectedDeviceChanged();
   }
   resetPairing();
 }

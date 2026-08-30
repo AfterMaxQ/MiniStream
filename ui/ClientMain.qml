@@ -61,6 +61,9 @@ ApplicationWindow {
     }
     Component {
         id: pairingPage
-        PairingPage { controller: clientController }
+        PairingPage {
+            controller: clientController
+            peerLabel: clientController.selectedDeviceLabel
+        }
     }
 }

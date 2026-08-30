@@ -6,6 +6,7 @@
 #include <array>
 #include <chrono>
 #include <memory>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -42,6 +43,33 @@ std::uint8_t encode_flags(const DiscoveryAdvertisement& advertisement) {
 bool valid_system(std::uint8_t value) {
   return value >= static_cast<std::uint8_t>(DiscoverySystem::Windows) &&
          value <= static_cast<std::uint8_t>(DiscoverySystem::Linux);
+}
+
+std::string system_label(DiscoverySystem system) {
+  switch (system) {
+    case DiscoverySystem::Windows:
+      return "Windows";
+    case DiscoverySystem::MacOS:
+      return "macOS";
+    case DiscoverySystem::Linux:
+      return "Linux";
+    case DiscoverySystem::Unknown:
+      return "Unknown";
+  }
+  return "Unknown";
+}
+
+std::string codec_label(const DiscoveryCapabilities& capabilities) {
+  if (capabilities.h264 && capabilities.hevc) {
+    return "H.264/HEVC";
+  }
+  if (capabilities.hevc) {
+    return "HEVC";
+  }
+  if (capabilities.h264) {
+    return "H.264";
+  }
+  return "No video";
 }
 
 }  // namespace
@@ -136,6 +164,17 @@ std::optional<DiscoveryAdvertisement> decode_discovery_advertisement(
       max_height,
       max_fps,
       true};
+}
+
+std::string format_discovered_host(const DiscoveredHost& host) {
+  const auto identity = system_label(host.system) + " | " + host.device_name;
+  const auto parameters = codec_label(host.capabilities) + " | " +
+                          std::to_string(host.max_width) + "x" +
+                          std::to_string(host.max_height) + " " +
+                          std::to_string(host.max_fps) + " fps | " +
+                          (host.capabilities.hdr10 ? "HDR10" : "SDR") + " | " +
+                          (host.capabilities.audio ? "Audio" : "No audio");
+  return identity + "\n" + parameters;
 }
 
 struct DiscoveryHost::Impl {

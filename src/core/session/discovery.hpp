@@ -65,6 +65,7 @@ std::vector<std::byte> encode_discovery_advertisement(
     const DiscoveryAdvertisement& advertisement);
 std::optional<DiscoveryAdvertisement> decode_discovery_advertisement(
     std::span<const std::byte> bytes);
+std::string format_discovered_host(const DiscoveredHost& host);
 
 class DiscoveryHost {
  public:
