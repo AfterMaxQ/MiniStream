@@ -10,6 +10,7 @@ add_executable(
   transport/reassembler_test.cpp
   transport/reliable_control_test.cpp
   transport/packet_scheduler_test.cpp
+  media/media_pipeline_test.cpp
   time/clock_sync_test.cpp
   net/fault_injector_test.cpp
   adaptation/rate_controller_test.cpp
