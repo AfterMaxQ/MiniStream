@@ -11,6 +11,9 @@ def test_client_shortcuts_leave_game_keys_in_remote_mode() -> None:
     assert 'sequence: "Esc"' in source
     assert 'sequence: "Ctrl+Alt+R"' in source
     assert 'sequence: "Meta+Alt+R"' in source
+    assert 'sequence: "Ctrl+Alt+Shift+R"' in source
+    assert 'sequence: "Meta+Alt+Shift+R"' in source
+    assert source.count("onActivated: roleController.releaseRemoteInput()") == 2
     assert 'sequence: "Ctrl+Shift+F12"' not in source
     assert source.count("enabled: !roleController.remoteInputActive") >= 2
 

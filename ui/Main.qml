@@ -38,16 +38,30 @@ ApplicationWindow {
         onActivated: window.visibility = Window.Windowed
     }
     Shortcut {
-        sequence: "Ctrl+Alt+Shift+R"
+        sequence: "Ctrl+Alt+R"
         enabled: Qt.platform.os !== "osx"
                  && roleController.mode === 2 && roleController.connected
+                 && !roleController.remoteInputActive
         onActivated: roleController.toggleRemoteInput()
+    }
+    Shortcut {
+        sequence: "Meta+Alt+R"
+        enabled: Qt.platform.os === "osx"
+                 && roleController.mode === 2 && roleController.connected
+                 && !roleController.remoteInputActive
+        onActivated: roleController.toggleRemoteInput()
+    }
+    Shortcut {
+        sequence: "Ctrl+Alt+Shift+R"
+        enabled: Qt.platform.os !== "osx"
+                 && roleController.remoteInputActive
+        onActivated: roleController.releaseRemoteInput()
     }
     Shortcut {
         sequence: "Meta+Alt+Shift+R"
         enabled: Qt.platform.os === "osx"
-                 && roleController.mode === 2 && roleController.connected
-        onActivated: roleController.toggleRemoteInput()
+                 && roleController.remoteInputActive
+        onActivated: roleController.releaseRemoteInput()
     }
 
     Item {

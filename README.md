@@ -45,10 +45,10 @@ Windows 保持 D3D11 纹理，在 macOS 保持 `CVPixelBuffer`/Metal 纹理，QM
 
 输入捕获只在 MiniStream 窗口内生效，不安装全局键盘或鼠标钩子。为避免和
 游戏菜单快捷键冲突，远程输入开启时 Esc 和 F11 会发送到远端；退出控制请
-点击 **Use this device**，也可以使用始终由本机处理的保留组合键：
+点击 **Use this device**，也可以使用始终由本机处理的保留退出组合键：
 
-- Windows/Linux：`Ctrl+Alt+Shift+R` 切换远程输入；
-- macOS：`⌘+Option+Shift+R` 切换远程输入；
+- Windows/Linux：`Ctrl+Alt+R` 进入远程输入，`Ctrl+Alt+Shift+R` 退出；
+- macOS：`⌘+Option+R` 进入远程输入，`⌘+Option+Shift+R` 退出；
 - `F11` 切换全屏，非远程输入模式下 `Esc` 退出全屏。
 
 两端必须运行相同的协议版本。v0.2.2 不与 v0.2.1 及更早版本建立会话；
