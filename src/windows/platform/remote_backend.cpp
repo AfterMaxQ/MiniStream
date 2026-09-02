@@ -32,8 +32,8 @@ RemoteCapabilities WindowsRemoteBackend::inspect() const {
   const auto network = inspect_host_capabilities().network;
   const bool h264 = MfDecoder::hardware_available(VideoCodec::H264);
   const bool hevc = MfDecoder::hardware_available(VideoCodec::Hevc);
-  return {{h264 || hevc, (h264 || hevc) ? "Media Foundation hardware decoder detected"
-                                         : "Hardware H.264/HEVC decoder unavailable"},
+  return {{h264 || hevc, (h264 || hevc) ? "Media Foundation H.264/HEVC decoder detected"
+                                         : "Media Foundation H.264/HEVC decoder unavailable"},
           {audio.ready, audio.detail},
           {true, "Window-local keyboard and mouse"},
           {network.ready, network.detail},

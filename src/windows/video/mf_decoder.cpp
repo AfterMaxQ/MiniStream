@@ -53,11 +53,13 @@ bool enumerate_decoder(VideoCodec codec) noexcept {
     return false;
   }
   MFT_REGISTER_TYPE_INFO input{MFMediaType_Video, *subtype};
-  MFT_REGISTER_TYPE_INFO output{MFMediaType_Video, MFVideoFormat_NV12};
   IMFActivate** activates = nullptr;
   UINT32 count = 0;
-  const auto status = MFTEnumEx(MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_HARDWARE,
-                                &input, &output, &activates, &count);
+  constexpr UINT32 flags = MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_ASYNCMFT |
+                           MFT_ENUM_FLAG_LOCALMFT | MFT_ENUM_FLAG_HARDWARE |
+                           MFT_ENUM_FLAG_SORTANDFILTER;
+  const auto status = MFTEnumEx(MFT_CATEGORY_VIDEO_DECODER, flags, &input, nullptr,
+                                &activates, &count);
   if (FAILED(status) || count == 0 || activates == nullptr) {
     if (activates) {
       CoTaskMemFree(activates);
@@ -152,11 +154,13 @@ Result<void, MfDecodeError> MfDecoder::configure(const CodecConfig& config) {
   }
   impl_->transform.Reset();
   MFT_REGISTER_TYPE_INFO input{MFMediaType_Video, *input_subtype(config.codec)};
-  MFT_REGISTER_TYPE_INFO output{MFMediaType_Video, MFVideoFormat_NV12};
   IMFActivate** activates = nullptr;
   UINT32 count = 0;
-  if (FAILED(MFTEnumEx(MFT_CATEGORY_VIDEO_DECODER, MFT_ENUM_FLAG_HARDWARE,
-                       &input, &output, &activates, &count)) || count == 0) {
+  constexpr UINT32 flags = MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_ASYNCMFT |
+                           MFT_ENUM_FLAG_LOCALMFT | MFT_ENUM_FLAG_HARDWARE |
+                           MFT_ENUM_FLAG_SORTANDFILTER;
+  if (FAILED(MFTEnumEx(MFT_CATEGORY_VIDEO_DECODER, flags, &input, nullptr,
+                       &activates, &count)) || count == 0) {
     if (activates) {
       CoTaskMemFree(activates);
     }

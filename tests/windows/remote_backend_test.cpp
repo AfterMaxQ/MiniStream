@@ -1,4 +1,5 @@
 #include "windows/platform/remote_backend.hpp"
+#include "windows/video/mf_decoder.hpp"
 
 #include "core/video/codec_config.hpp"
 
@@ -19,4 +20,11 @@ TEST_CASE("Windows remote backend teardown is idempotent") {
   backend.stop();
   backend.play_rumble(0, 0, 0);
   REQUIRE_FALSE(backend.play_audio({}));
+}
+
+TEST_CASE("Windows Media Foundation initializes the H264 decoder", "[.hardware]") {
+  REQUIRE(MfDecoder::hardware_available(VideoCodec::H264));
+  MfDecoder decoder;
+  REQUIRE(decoder.start());
+  REQUIRE(decoder.configure({VideoCodec::H264, 1920, 1080, 60, false, {}}));
 }
