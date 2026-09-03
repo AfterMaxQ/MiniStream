@@ -42,7 +42,9 @@ def test_role_controller_notifies_qml_after_runtime_state_changes() -> None:
     source = controller.read_text(encoding="utf-8")
     assert "const auto before_state =" in source
     assert "const auto after_state =" in source
-    assert "if (before_state != after_state)" in source
+    assert "before_state != after_state" in source
+    assert "const auto before_discovery_error = controlled_->last_discovery_error();" in source
+    assert "before_discovery_error != controlled_->last_discovery_error()" in source
 
 
 def test_pairing_does_not_activate_the_stream_shell() -> None:

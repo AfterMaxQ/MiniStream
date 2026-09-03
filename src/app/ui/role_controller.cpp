@@ -730,9 +730,11 @@ void RoleController::tick() {
 #if defined(_WIN32) || defined(__APPLE__)
   if (controlled_ && mode_ == RoleMode::Controlled) {
     const auto before_state = controlled_->state();
+    const auto before_discovery_error = controlled_->last_discovery_error();
     controlled_->tick();
     const auto after_state = controlled_->state();
-    if (before_state != after_state) {
+    if (before_state != after_state ||
+        before_discovery_error != controlled_->last_discovery_error()) {
       emit stateChanged();
     }
   } else if (remote_ && mode_ == RoleMode::Remote) {
