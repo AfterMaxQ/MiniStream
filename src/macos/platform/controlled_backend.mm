@@ -11,9 +11,47 @@
 #include <VideoToolbox/VideoToolbox.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <utility>
 
 namespace ministream {
+
+namespace {
+
+bool has_hardware_encoder(CMVideoCodecType codec) {
+  CFArrayRef encoders = nullptr;
+  if (VTCopyVideoEncoderList(nullptr, &encoders) != noErr || !encoders) {
+    return false;
+  }
+
+  bool found = false;
+  for (CFIndex index = 0; index < CFArrayGetCount(encoders); ++index) {
+    const auto encoder =
+        static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(encoders, index));
+    const auto codec_value =
+        CFDictionaryGetValue(encoder, kVTVideoEncoderList_CodecType);
+    const auto hardware_value =
+        CFDictionaryGetValue(encoder, kVTVideoEncoderList_IsHardwareAccelerated);
+    if (!codec_value || !hardware_value ||
+        CFGetTypeID(codec_value) != CFNumberGetTypeID() ||
+        CFGetTypeID(hardware_value) != CFBooleanGetTypeID()) {
+      continue;
+    }
+
+    std::int32_t listed_codec{};
+    if (CFNumberGetValue(static_cast<CFNumberRef>(codec_value), kCFNumberSInt32Type,
+                         &listed_codec) &&
+        static_cast<CMVideoCodecType>(listed_codec) == codec &&
+        CFBooleanGetValue(static_cast<CFBooleanRef>(hardware_value))) {
+      found = true;
+      break;
+    }
+  }
+  CFRelease(encoders);
+  return found;
+}
+
+}  // namespace
 
 struct MacControlledBackend::Impl {
   std::unique_ptr<CGDisplayStreamCapture> capture;
@@ -37,8 +75,8 @@ ControlledCapabilities MacControlledBackend::inspect() const {
     screen_permission = CGPreflightScreenCaptureAccess();
   }
   const bool trusted = AccessibilityInput::trusted();
-  const bool h264 = VTIsHardwareEncodeSupported(kCMVideoCodecType_H264);
-  const bool hevc = VTIsHardwareEncodeSupported(kCMVideoCodecType_HEVC);
+  const bool h264 = has_hardware_encoder(kCMVideoCodecType_H264);
+  const bool hevc = has_hardware_encoder(kCMVideoCodecType_HEVC);
   const bool video_ready = screen_permission && (h264 || hevc);
   const auto audio = SystemAudioCapture::inspect();
   const auto video_detail = !screen_permission
