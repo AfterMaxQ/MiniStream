@@ -136,6 +136,9 @@ bool convert_sample_buffer(CMSampleBufferRef sample_buffer, PcmBlock& result) {
   return true;
 }
 
+}  // namespace
+}  // namespace ministream
+
 @interface MiniStreamSystemAudioOutput : NSObject <SCStreamOutput, SCStreamDelegate>
 - (instancetype)initWithImpl:(ministream::SystemAudioCapture::Impl*)impl;
 @end
@@ -170,7 +173,7 @@ bool convert_sample_buffer(CMSampleBufferRef sample_buffer, PcmBlock& result) {
 }
 @end
 
-}  // namespace
+namespace ministream {
 
 void SystemAudioCapture::Impl::append(CMSampleBufferRef sample_buffer) {
   PcmBlock block;
