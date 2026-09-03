@@ -24,4 +24,7 @@ if missing:
 if "EncodedFrame latest{};" in SOURCE or "bool has_latest{};" in SOURCE:
     raise SystemExit("VideoToolbox encoder still has a single latest-frame slot")
 
+if SOURCE.count("int header_length = 0;") != 2 or "size_t header_length = 0;" in SOURCE:
+    raise SystemExit("VideoToolbox parameter-set header length must match CoreMedia int API")
+
 print("VideoToolbox queue contract check passed")

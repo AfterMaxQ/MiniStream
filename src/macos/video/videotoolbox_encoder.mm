@@ -61,7 +61,7 @@ std::vector<std::byte> parameter_sets(CMFormatDescriptionRef format, VideoCodec 
 
   if (codec == VideoCodec::H264) {
     size_t count = 0;
-    size_t header_length = 0;
+    int header_length = 0;
     const std::uint8_t* first = nullptr;
     size_t first_size = 0;
     if (CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
@@ -83,7 +83,7 @@ std::vector<std::byte> parameter_sets(CMFormatDescriptionRef format, VideoCodec 
     }
   } else if (codec == VideoCodec::Hevc) {
     size_t count = 0;
-    size_t header_length = 0;
+    int header_length = 0;
     const std::uint8_t* first = nullptr;
     size_t first_size = 0;
     if (CMVideoFormatDescriptionGetHEVCParameterSetAtIndex(
