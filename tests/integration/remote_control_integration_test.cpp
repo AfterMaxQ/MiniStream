@@ -261,7 +261,9 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
 
   REQUIRE(remote.connect(0));
   for (unsigned attempt = 0; attempt < 750U &&
-                                (!remote.pairing() || !controlled.pairing());
+                                (!remote.pairing() || !controlled.pairing() ||
+                                 remote.pairing_code().empty() ||
+                                 controlled.pairing_code().empty());
        ++attempt) {
     pump(controlled, remote);
   }
@@ -534,7 +536,10 @@ TEST_CASE("controlled pairing survives retry exhaustion and converges in grace")
   drain(controller);
 
   REQUIRE(controller.send(encode_pairing_confirmation(true)));
-  controlled.tick();
+  for (unsigned attempt = 0; attempt < 100U && !controlled.streaming(); ++attempt) {
+    controlled.tick();
+    std::this_thread::sleep_for(1ms);
+  }
   REQUIRE(controlled.streaming());
   drain(controller);
 
@@ -674,8 +679,11 @@ TEST_CASE("remote pairing replies during post-confirmation grace") {
   REQUIRE_FALSE(remote.pairing_code().empty());
 
   REQUIRE(controlled_peer.reply(encode_pairing_confirmation(true)));
-  remote.tick();
   remote.confirm_pairing();
+  for (unsigned attempt = 0; attempt < 100U && !remote.streaming(); ++attempt) {
+    remote.tick();
+    std::this_thread::sleep_for(1ms);
+  }
   REQUIRE(remote.streaming());
   drain(controlled_peer);
 

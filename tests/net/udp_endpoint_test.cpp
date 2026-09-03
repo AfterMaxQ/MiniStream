@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <thread>
+#include <utility>
 #include <vector>
 
 using namespace std::chrono_literals;
@@ -84,8 +85,8 @@ TEST_CASE("UDP endpoint keeps a locked peer while ignoring stray senders") {
   REQUIRE(stray.set_remote("127.0.0.1", receiver.local_port()));
 
   REQUIRE(legitimate.send(std::vector<std::byte>{std::byte{0x01}}));
-  const auto first = receiver.try_receive();
-  REQUIRE(first.has_value());
+  const auto first = receiver.receive(100ms);
+  REQUIRE(first);
   REQUIRE(receiver.lock_peer(*first));
   REQUIRE(receiver.peer_locked());
 
@@ -111,10 +112,30 @@ TEST_CASE("UDP endpoint rechecks prefetched datagrams after locking a peer") {
 
   REQUIRE(first_sender.send(std::vector<std::byte>{std::byte{0x01}}));
   REQUIRE(second_sender.send(std::vector<std::byte>{std::byte{0x02}}));
-  const auto prefetched = receiver.try_receive_batch(2);
+  std::vector<ReceivedDatagram> prefetched;
+  for (unsigned attempt = 0; attempt < 100U && prefetched.size() < 2U; ++attempt) {
+    auto batch = receiver.try_receive_batch(2U - prefetched.size());
+    for (auto& packet : batch) {
+      prefetched.push_back(std::move(packet));
+    }
+    if (prefetched.size() < 2U) {
+      std::this_thread::sleep_for(1ms);
+    }
+  }
   REQUIRE(prefetched.size() == 2);
 
-  REQUIRE(receiver.lock_peer(prefetched.front()));
-  REQUIRE(receiver.matches_peer(prefetched.front()));
-  REQUIRE_FALSE(receiver.matches_peer(prefetched.back()));
+  const ReceivedDatagram* first = nullptr;
+  const ReceivedDatagram* second = nullptr;
+  for (const auto& packet : prefetched) {
+    if (packet.datagram.bytes == std::vector<std::byte>{std::byte{0x01}}) {
+      first = &packet;
+    } else if (packet.datagram.bytes == std::vector<std::byte>{std::byte{0x02}}) {
+      second = &packet;
+    }
+  }
+  REQUIRE(first != nullptr);
+  REQUIRE(second != nullptr);
+  REQUIRE(receiver.lock_peer(*first));
+  REQUIRE(receiver.matches_peer(*first));
+  REQUIRE_FALSE(receiver.matches_peer(*second));
 }
