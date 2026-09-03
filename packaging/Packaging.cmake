@@ -18,7 +18,7 @@ if(WIN32)
   set(CPACK_NSIS_MUI_UNIICON "${PROJECT_SOURCE_DIR}/assets/icons/ministream.ico")
   set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
   set(CPACK_NSIS_MODIFY_PATH OFF)
-  set(CPACK_NSIS_MUI_FINISHPAGE_RUN "bin\\ministream.exe")
+  set(CPACK_NSIS_MUI_FINISHPAGE_RUN "ministream.exe")
   set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\ministream.exe")
   set(CPACK_NSIS_CREATE_ICONS_EXTRA
       "CreateShortCut '$DESKTOP\\MiniStream.lnk' '$INSTDIR\\bin\\ministream.exe'")

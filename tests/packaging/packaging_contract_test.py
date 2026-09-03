@@ -26,6 +26,8 @@ def test_packaging_declares_local_network_and_private_firewall_contract() -> Non
     assert "protocol=UDP" in firewall_install
     assert "profile=public" not in firewall_install
     assert "delete rule name=\"MiniStream (Private UDP)\"" in firewall_uninstall
+    assert 'set(CPACK_NSIS_MUI_FINISHPAGE_RUN "ministream.exe")' in packaging
+    assert 'CPACK_NSIS_MUI_FINISHPAGE_RUN "bin' not in packaging
 
 
 if __name__ == "__main__":
