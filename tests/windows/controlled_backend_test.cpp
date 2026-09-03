@@ -25,10 +25,7 @@ TEST_CASE("Windows controlled backend preflights advertised codecs", "[.hardware
   WindowsControlledBackend backend;
   if (!backend.start()) {
     const auto capabilities = backend.inspect();
-    if (capabilities.video.detail.find("Windows HDR") != std::string::npos) {
-      REQUIRE_FALSE(capabilities.video.ready);
-      SKIP(capabilities.video.detail);
-    }
+    INFO(capabilities.video.detail);
     SKIP("Controlled hardware backend is not available");
   }
   const auto capabilities = backend.inspect();

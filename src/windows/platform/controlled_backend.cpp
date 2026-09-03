@@ -94,10 +94,20 @@ bool WindowsControlledBackend::start() {
     stop();
     return false;
   }
-  if (impl_->capture->format() != DXGI_FORMAT_B8G8R8A8_UNORM) {
+  const auto capture_info = impl_->capture->capture_info();
+  const auto capture_status = classify_dxgi_capture(capture_info);
+  if (capture_status == DxgiCaptureStatus::HdrActive) {
+    const auto diagnostic = describe_dxgi_capture(capture_info);
     stop();
     impl_->last_start_error =
-        "Windows HDR capture is not supported yet; turn off HDR for this display";
+        "Windows HDR capture is not supported yet; turn off HDR for this display; " +
+        diagnostic;
+    return false;
+  }
+  if (capture_status == DxgiCaptureStatus::UnsupportedFormat) {
+    const auto diagnostic = describe_dxgi_capture(capture_info);
+    stop();
+    impl_->last_start_error = "Unsupported Windows desktop capture format; " + diagnostic;
     return false;
   }
   impl_->encoder = std::make_unique<NvencEncoder>();
@@ -191,10 +201,11 @@ std::optional<EncodedFrame> WindowsControlledBackend::next_video() {
     return std::nullopt;
   }
   auto frame = *captured;
-  if (impl_->configured &&
-      (frame.width != impl_->requested.width || frame.height != impl_->requested.height)) {
-    const auto resized = impl_->capture->resize(
-        frame, impl_->requested.width, impl_->requested.height);
+  const auto target_width = impl_->configured ? impl_->requested.width : frame.width;
+  const auto target_height = impl_->configured ? impl_->requested.height : frame.height;
+  if (frame.format != DXGI_FORMAT_B8G8R8A8_UNORM || frame.width != target_width ||
+      frame.height != target_height) {
+    const auto resized = impl_->capture->resize(frame, target_width, target_height);
     if (!resized) {
       return std::nullopt;
     }

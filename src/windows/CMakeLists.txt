@@ -27,7 +27,7 @@ endif()
 target_link_libraries(
   ministream_windows_platform
   PUBLIC MiniStream::Core
-  PRIVATE d3d11 dxgi dxguid ole32 advapi32 user32 mfplat mfreadwrite mfuuid xinput9_1_0
+  PRIVATE d3d11 d3dcompiler dxgi dxguid ole32 advapi32 user32 mfplat mfreadwrite mfuuid xinput9_1_0
           ministream_vigemclient
 )
 ministream_set_warnings(ministream_windows_platform)
