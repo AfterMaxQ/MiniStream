@@ -617,10 +617,18 @@ void ControlledRuntime::tick() {
     return;
   }
   constexpr std::size_t kMaxSendPacketsPerTick = 256;
-  for (auto& datagram : scheduler_->drain(now, kMaxSendPacketsPerTick)) {
-    if (!session_->reply(datagram.bytes)) {
-      break;
+  bool fatal_send_error{};
+  scheduler_->consume_ready(now, kMaxSendPacketsPerTick, [&](const Datagram& datagram) {
+    const auto result = session_->reply(datagram.bytes);
+    if (result) {
+      return true;
     }
+    fatal_send_error = result.error() != NetError::WouldBlock;
+    return false;
+  });
+  if (fatal_send_error) {
+    clear_peer_session();
+    return;
   }
   StreamSample sample;
   sample.bitrate_bps = encoder_bitrate_bps_;

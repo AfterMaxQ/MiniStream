@@ -44,6 +44,16 @@ TEST_CASE("UDP endpoint rejects oversized datagrams before the socket") {
   REQUIRE_FALSE(endpoint.send(std::vector<std::byte>(kMaxDatagramBytes + 1)));
 }
 
+TEST_CASE("UDP endpoint classifies temporary send backpressure separately") {
+  const asio::error_code would_block = asio::error::would_block;
+  const asio::error_code try_again = asio::error::try_again;
+  const asio::error_code network_unreachable = asio::error::network_unreachable;
+
+  REQUIRE(detail::classify_send_error(would_block) == NetError::WouldBlock);
+  REQUIRE(detail::classify_send_error(try_again) == NetError::WouldBlock);
+  REQUIRE(detail::classify_send_error(network_unreachable) == NetError::Send);
+}
+
 TEST_CASE("UDP endpoint drains a bounded batch instead of one packet per tick") {
   UdpEndpoint receiver;
   UdpEndpoint sender;

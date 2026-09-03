@@ -16,7 +16,11 @@
 
 namespace ministream {
 
-enum class NetError { Resolve, Bind, Send, Receive, Timeout, Oversized, NoPeer };
+enum class NetError { Resolve, Bind, WouldBlock, Send, Receive, Timeout, Oversized, NoPeer };
+
+namespace detail {
+[[nodiscard]] NetError classify_send_error(const asio::error_code& error) noexcept;
+}
 
 struct ReceivedDatagram {
   Datagram datagram;

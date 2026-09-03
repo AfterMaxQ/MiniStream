@@ -5,6 +5,12 @@
 
 namespace ministream {
 
+NetError detail::classify_send_error(const asio::error_code& error) noexcept {
+  return error == asio::error::would_block || error == asio::error::try_again
+             ? NetError::WouldBlock
+             : NetError::Send;
+}
+
 UdpEndpoint::UdpEndpoint() : socket_(io_) {}
 
 Result<void, NetError> UdpEndpoint::ensure_open() {
@@ -63,7 +69,7 @@ Result<std::size_t, NetError> UdpEndpoint::send(std::span<const std::byte> bytes
   }
   asio::error_code error;
   const auto sent = socket_.send_to(asio::buffer(bytes.data(), bytes.size()), *remote_, 0, error);
-  return error ? Result<std::size_t, NetError>::err(NetError::Send)
+  return error ? Result<std::size_t, NetError>::err(detail::classify_send_error(error))
                : Result<std::size_t, NetError>::ok(sent);
 }
 
@@ -77,7 +83,7 @@ Result<std::size_t, NetError> UdpEndpoint::reply(std::span<const std::byte> byte
   asio::error_code error;
   const auto sent = socket_.send_to(
       asio::buffer(bytes.data(), bytes.size()), *remote_, 0, error);
-  return error ? Result<std::size_t, NetError>::err(NetError::Send)
+  return error ? Result<std::size_t, NetError>::err(detail::classify_send_error(error))
                : Result<std::size_t, NetError>::ok(sent);
 }
 

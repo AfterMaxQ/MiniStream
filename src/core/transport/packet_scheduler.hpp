@@ -19,6 +19,27 @@ class PacketScheduler {
   bool enqueue(Priority priority, Datagram datagram, SteadyClock::time_point deadline);
   std::optional<Datagram> next(SteadyClock::time_point now);
   std::vector<Datagram> drain(SteadyClock::time_point now, std::size_t max_packets);
+  template <class Consumer>
+  std::size_t consume_ready(
+      SteadyClock::time_point now, std::size_t max_packets, Consumer&& consumer) {
+    discard_expired(now);
+    refill_video_tokens(now);
+
+    std::size_t consumed{};
+    while (consumed < max_packets) {
+      const auto index = ready_queue_index();
+      if (!index) {
+        break;
+      }
+      auto& datagram = queues_[*index].front().datagram;
+      if (!consumer(static_cast<const Datagram&>(datagram))) {
+        break;
+      }
+      commit_ready(*index, datagram.bytes.size());
+      ++consumed;
+    }
+    return consumed;
+  }
   [[nodiscard]] Microseconds estimated_video_queue_delay() const;
   [[nodiscard]] std::uint64_t video_rate_bps() const noexcept;
   void set_video_rate(std::uint64_t bits_per_second);
@@ -31,6 +52,8 @@ class PacketScheduler {
 
   void discard_expired(SteadyClock::time_point now);
   void refill_video_tokens(SteadyClock::time_point now);
+  [[nodiscard]] std::optional<std::size_t> ready_queue_index() const;
+  void commit_ready(std::size_t index, std::size_t bytes);
   [[nodiscard]] double max_video_tokens_bits() const noexcept;
 
   static constexpr std::array<std::size_t, 5> kQueueLimits{64, 64, 128, 512, 64};

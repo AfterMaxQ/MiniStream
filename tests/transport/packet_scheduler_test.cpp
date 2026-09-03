@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <vector>
 
 using namespace std::chrono_literals;
 using namespace ministream;
@@ -58,4 +59,33 @@ TEST_CASE("50 Mbps scheduler releases a real burst instead of two packets per ti
   const auto second = scheduler.drain(now + 10ms, 256);
   const auto second_count = second.size();
   REQUIRE(second_count >= 40);
+}
+
+TEST_CASE("packet scheduler retains the blocked packet and unsent tail") {
+  PacketScheduler scheduler;
+  const auto now = SteadyClock::time_point{};
+  REQUIRE(scheduler.enqueue(Priority::Input, marked(std::byte{1}), now + 1s));
+  REQUIRE(scheduler.enqueue(Priority::Input, marked(std::byte{2}), now + 1s));
+  REQUIRE(scheduler.enqueue(Priority::Input, marked(std::byte{3}), now + 1s));
+
+  std::vector<std::byte> first_attempt;
+  const auto first_sent = scheduler.consume_ready(
+      now, 256, [&](const Datagram& datagram) {
+        first_attempt.push_back(datagram.bytes.front());
+        return datagram.bytes.front() != std::byte{2};
+      });
+
+  REQUIRE(first_sent == 1);
+  REQUIRE(first_attempt == std::vector<std::byte>{std::byte{1}, std::byte{2}});
+
+  std::vector<std::byte> retry_attempt;
+  const auto retry_sent = scheduler.consume_ready(
+      now, 256, [&](const Datagram& datagram) {
+        retry_attempt.push_back(datagram.bytes.front());
+        return true;
+      });
+
+  REQUIRE(retry_sent == 2);
+  REQUIRE(retry_attempt == std::vector<std::byte>{std::byte{2}, std::byte{3}});
+  REQUIRE_FALSE(scheduler.next(now));
 }

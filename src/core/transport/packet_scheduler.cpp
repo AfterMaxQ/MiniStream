@@ -28,35 +28,29 @@ bool PacketScheduler::enqueue(
 std::optional<Datagram> PacketScheduler::next(SteadyClock::time_point now) {
   discard_expired(now);
   refill_video_tokens(now);
-  for (std::size_t index = 0; index < queues_.size(); ++index) {
-    auto& queue = queues_[index];
-    if (queue.empty()) {
-      continue;
-    }
-    if (index == static_cast<std::size_t>(Priority::Video)) {
-      const auto bits = static_cast<double>(queue.front().datagram.bytes.size() * 8U);
-      if (bits > video_tokens_bits_) {
-        continue;
-      }
-      video_tokens_bits_ -= bits;
-    }
-    auto datagram = std::move(queue.front().datagram);
-    queue.pop_front();
-    return datagram;
+  const auto index = ready_queue_index();
+  if (!index) {
+    return std::nullopt;
   }
-  return std::nullopt;
+  auto datagram = std::move(queues_[*index].front().datagram);
+  commit_ready(*index, datagram.bytes.size());
+  return datagram;
 }
 
 std::vector<Datagram> PacketScheduler::drain(
     SteadyClock::time_point now, std::size_t max_packets) {
   std::vector<Datagram> result;
   result.reserve(max_packets);
+  discard_expired(now);
+  refill_video_tokens(now);
   while (result.size() < max_packets) {
-    auto packet = next(now);
-    if (!packet) {
+    const auto index = ready_queue_index();
+    if (!index) {
       break;
     }
-    result.push_back(std::move(*packet));
+    auto datagram = std::move(queues_[*index].front().datagram);
+    commit_ready(*index, datagram.bytes.size());
+    result.push_back(std::move(datagram));
   }
   return result;
 }
@@ -106,6 +100,30 @@ void PacketScheduler::refill_video_tokens(SteadyClock::time_point now) {
   video_tokens_bits_ = std::min(
       maximum, video_tokens_bits_ + elapsed * static_cast<double>(video_rate_bps_));
   last_refill_ = now;
+}
+
+std::optional<std::size_t> PacketScheduler::ready_queue_index() const {
+  for (std::size_t index = 0; index < queues_.size(); ++index) {
+    const auto& queue = queues_[index];
+    if (queue.empty()) {
+      continue;
+    }
+    if (index == static_cast<std::size_t>(Priority::Video)) {
+      const auto bits = static_cast<double>(queue.front().datagram.bytes.size() * 8U);
+      if (bits > video_tokens_bits_) {
+        continue;
+      }
+    }
+    return index;
+  }
+  return std::nullopt;
+}
+
+void PacketScheduler::commit_ready(std::size_t index, std::size_t bytes) {
+  if (index == static_cast<std::size_t>(Priority::Video)) {
+    video_tokens_bits_ -= static_cast<double>(bytes * 8U);
+  }
+  queues_[index].pop_front();
 }
 
 }  // namespace ministream
