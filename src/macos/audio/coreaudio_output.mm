@@ -37,7 +37,8 @@ OSStatus render_callback(void* refcon, AudioUnitRenderActionFlags*, const AudioT
     const auto available = std::min(writable, impl->sample_count);
     for (std::size_t i = 0; i < available; ++i) {
       scratch[i] = impl->samples[impl->read_index];
-      impl->read_index = (impl->read_index + 1U) % Impl::kMaxSamples;
+      impl->read_index =
+          (impl->read_index + 1U) % CoreAudioOutput::Impl::kMaxSamples;
     }
     impl->sample_count -= available;
     if (available < requested) {
