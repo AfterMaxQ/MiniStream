@@ -92,7 +92,13 @@ TEST_CASE("UDP endpoint keeps a locked peer while ignoring stray senders") {
 
   REQUIRE(stray.send(std::vector<std::byte>{std::byte{0xEE}}));
   REQUIRE(legitimate.send(std::vector<std::byte>{std::byte{0x02}}));
-  const auto batch = receiver.try_receive_batch(8);
+  std::vector<ReceivedDatagram> batch;
+  for (unsigned attempt = 0; attempt < 100U && batch.empty(); ++attempt) {
+    batch = receiver.try_receive_batch(8);
+    if (batch.empty()) {
+      std::this_thread::sleep_for(1ms);
+    }
+  }
   REQUIRE(batch.size() == 1);
   REQUIRE(batch.front().datagram.bytes == std::vector<std::byte>{std::byte{0x02}});
 
