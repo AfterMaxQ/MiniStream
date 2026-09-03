@@ -19,7 +19,7 @@ TEST_CASE("UDP endpoint exchanges a bounded loopback datagram") {
 
   bool replied = false;
   bool locked = false;
-  std::jthread server_thread([&] {
+  std::thread server_thread([&] {
     const auto request = server.receive(500ms);
     if (request) {
       locked = static_cast<bool>(server.lock_peer(*request));

@@ -41,10 +41,12 @@ TEST_CASE("BoundedQueue RejectNewest protects queued work") {
 
 TEST_CASE("BoundedQueue wakes a waiting consumer") {
   BoundedQueue<int> queue(1, OverflowPolicy::RejectNewest);
-  std::jthread producer([&queue] {
+  std::thread producer([&queue] {
     std::this_thread::sleep_for(1ms);
     queue.push(7);
   });
 
-  REQUIRE(queue.wait_pop_for(100ms) == 7);
+  const auto value = queue.wait_pop_for(100ms);
+  producer.join();
+  REQUIRE(value == 7);
 }
