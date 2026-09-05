@@ -71,6 +71,22 @@ std::vector<ControlSeq> ReliableDesktopInputReceiver::receive(
   if (static_cast<std::size_t>(distance) >= kMaxPending) {
     return {};
   }
+  // A missing key-down must never prevent an emergency release. Late packets
+  // before this barrier are acknowledged, but can no longer press a key again.
+  if (input.input.kind == DesktopInputKind::ReleaseAll) {
+    if (!injector_ || !injector_(input.input)) return {};
+    std::vector<ControlSeq> acknowledgements{input.sequence};
+    for (auto iterator = pending_.begin(); iterator != pending_.end();) {
+      if (static_cast<std::int32_t>(iterator->first - input.sequence) <= 0) {
+        acknowledgements.push_back(iterator->first);
+        iterator = pending_.erase(iterator);
+      } else {
+        ++iterator;
+      }
+    }
+    next_sequence_ = input.sequence + 1;
+    return acknowledgements;
+  }
   pending_.try_emplace(input.sequence, input.input);
 
   std::vector<ControlSeq> acknowledgements;

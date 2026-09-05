@@ -15,6 +15,7 @@ namespace ministream {
 struct ReassemblyConfig {
   Microseconds deadline{5000};
   std::size_t max_incomplete_frames{2};
+  Microseconds keyframe_deadline{};
 };
 
 class FrameReassembler {

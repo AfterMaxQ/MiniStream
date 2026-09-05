@@ -91,6 +91,11 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
   if (!trusted()) {
     return Result<void, AccessibilityInputError>::err(AccessibilityInputError::Permission);
   }
+  if (!modifiers_initialized_) {
+    caps_lock_ = (CGEventSourceFlagsState(kCGEventSourceStateHIDSystemState) &
+                  kCGEventFlagMaskAlphaShift) != 0;
+    modifiers_initialized_ = true;
+  }
   CGEventRef event = nullptr;
   std::optional<DesktopKey> key_state;
   std::optional<DesktopMouseButton> button_state;
@@ -109,9 +114,23 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
     auto current = CGEventCreate(nullptr);
     const auto location = current ? CGEventGetLocation(current) : CGPointZero;
     if (current) CFRelease(current);
-    event = CGEventCreateMouseEvent(nullptr, kCGEventMouseMoved,
+    auto type = kCGEventMouseMoved;
+    auto button = kCGMouseButtonLeft;
+    if (pressed_buttons_.contains(DesktopMouseButton::Left)) type = kCGEventLeftMouseDragged;
+    else if (pressed_buttons_.contains(DesktopMouseButton::Right)) {
+      type = kCGEventRightMouseDragged;
+      button = kCGMouseButtonRight;
+    } else if (pressed_buttons_.contains(DesktopMouseButton::Middle)) {
+      type = kCGEventOtherMouseDragged;
+      button = kCGMouseButtonCenter;
+    }
+    event = CGEventCreateMouseEvent(nullptr, type,
                                     CGPointMake(location.x + input.x, location.y + input.y),
-                                    kCGMouseButtonLeft);
+                                    button);
+    if (event) {
+      CGEventSetIntegerValueField(event, kCGMouseEventDeltaX, input.x);
+      CGEventSetIntegerValueField(event, kCGMouseEventDeltaY, input.y);
+    }
   } else if (input.kind == DesktopInputKind::MouseButton) {
     auto current = CGEventCreate(nullptr);
     const auto location = current ? CGEventGetLocation(current) : CGPointZero;
@@ -135,16 +154,17 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
     button_state = static_cast<DesktopMouseButton>(button);
     event = CGEventCreateMouseEvent(nullptr, type, location, mouse_button);
   } else if (input.kind == DesktopInputKind::MouseWheel) {
-    const auto lines = std::clamp(input.y / 120, -10, 10);
-    event = CGEventCreateScrollWheelEvent(nullptr, kCGScrollEventUnitLine, 1, lines);
+    wheel_remainder_ += static_cast<std::int64_t>(input.y);
+    const auto pixels = std::clamp<std::int64_t>(wheel_remainder_ / 4, -1200, 1200);
+    wheel_remainder_ %= 4;
+    event = CGEventCreateScrollWheelEvent(nullptr, kCGScrollEventUnitPixel, 1,
+                                          static_cast<std::int32_t>(pixels));
   } else {
     return Result<void, AccessibilityInputError>::err(AccessibilityInputError::InvalidEvent);
   }
   if (!event) {
     return Result<void, AccessibilityInputError>::err(AccessibilityInputError::PostFailed);
   }
-  CGEventPost(kCGHIDEventTap, event);
-  CFRelease(event);
   if (key_state) {
     if (release) {
       pressed_keys_.erase(*key_state);
@@ -158,10 +178,24 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
       pressed_buttons_.insert(*button_state);
     }
   }
+  CGEventFlags modifiers = 0;
+  if (key_state == DesktopKey::CapsLock && !release) caps_lock_ = !caps_lock_;
+  if (caps_lock_) modifiers |= kCGEventFlagMaskAlphaShift;
+  if (pressed_keys_.contains(DesktopKey::LeftShift)) modifiers |= kCGEventFlagMaskShift;
+  if (pressed_keys_.contains(DesktopKey::LeftControl)) modifiers |= kCGEventFlagMaskControl;
+  if (pressed_keys_.contains(DesktopKey::LeftAlt)) modifiers |= kCGEventFlagMaskAlternate;
+  if (pressed_keys_.contains(DesktopKey::LeftMeta)) modifiers |= kCGEventFlagMaskCommand;
+  if (key_state == DesktopKey::LeftShift || key_state == DesktopKey::LeftControl ||
+      key_state == DesktopKey::LeftAlt || key_state == DesktopKey::LeftMeta ||
+      key_state == DesktopKey::CapsLock) CGEventSetType(event, kCGEventFlagsChanged);
+  CGEventSetFlags(event, modifiers);
+  CGEventPost(kCGHIDEventTap, event);
+  CFRelease(event);
   return Result<void, AccessibilityInputError>::ok();
 }
 
 void AccessibilityInput::clear() noexcept {
+  wheel_remainder_ = 0;
   while (!pressed_keys_.empty()) {
     const auto key = *pressed_keys_.begin();
     if (!inject({DesktopInputKind::Key, kDesktopKeyRelease, 0, 0,
@@ -178,6 +212,7 @@ void AccessibilityInput::clear() noexcept {
       pressed_buttons_.erase(button);
     }
   }
+  modifiers_initialized_ = false;
 }
 
 }  // namespace ministream

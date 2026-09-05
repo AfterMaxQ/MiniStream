@@ -35,7 +35,7 @@ Windows 保持 D3D11 纹理，在 macOS 保持 `CVPixelBuffer`/Metal 纹理，QM
 
 1. 在准备共享画面的设备上打开 **Allow control**，确认 Video、Audio、Input
    和 Network 状态正常，然后点击 **Allow control**。
-2. 在另一台设备切换到 **Remote control**，点击 **Find devices**，从列表中
+2. 在另一台设备切换到 **Remote control**，设备列表每 3 秒自动刷新，也可点击 **Find devices** 立即查找，从列表中
    选择设备。列表显示系统类型、设备名和视频/音频参数。
 3. 点击 **Connect**。两台设备会显示同一个六位配对码；只有确认两边代码
    一致后才会开始串流。
@@ -55,6 +55,9 @@ Windows 保持 D3D11 纹理，在 macOS 保持 `CVPixelBuffer`/Metal 纹理，QM
 v0.2.1 及更早版本建立会话。升级旧版本时请同时替换控制端和被控制端。
 
 ## 从源码构建
+
+日常使用统一的 [构建 presets 与目录说明](docs/development.md)。Windows 和 macOS
+从同一个分支开发，生成文件统一放到 `out/`；历史版本文件夹只用于回溯。
 
 ### Windows
 
@@ -128,7 +131,7 @@ cmake --build build-release --config Release
 cpack --config build-release/CPackConfig.cmake -C Release
 ```
 
-输出文件名为 `MiniStream-Setup.exe`。安装器包含 Qt/QML、MSVC runtime、
+输出到 `out/packages/<版本>/`，文件名为 `MiniStream-<版本>-Windows-x64-Setup.exe`。安装器包含 Qt/QML、MSVC runtime、
 libsodium 和 ViGEmBus 安装程序；NVIDIA 显卡驱动仍由系统提供，不随包安装。
 
 ### macOS DMG
@@ -146,7 +149,7 @@ cmake --build build-release --config Release
 cpack --config build-release/CPackConfig.cmake -C Release
 ```
 
-输出 `MiniStream.dmg`。打开 DMG 后将 `MiniStream.app` 拖到
+输出到 `out/packages/<版本>/MiniStream-<版本>-macOS-<架构>.dmg`。打开 DMG 后将 `MiniStream.app` 拖到
 `Applications`，再从 Applications 启动。
 
 ## 当前版本边界

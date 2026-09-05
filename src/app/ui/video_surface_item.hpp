@@ -9,9 +9,7 @@
 namespace ministream {
 
 // Displays the latest decoded frame inside the Qt Quick scene.  The native
-// implementation imports platform textures on the render thread; the
-// Windows stub keeps the QML surface valid until its D3D11 presentation path
-// is connected.
+// implementation imports platform textures on the render thread.
 class VideoSurfaceItem : public QQuickItem {
   Q_OBJECT
   Q_PROPERTY(QObject* bridge READ bridge WRITE setBridge NOTIFY bridgeChanged)
@@ -40,6 +38,7 @@ class VideoSurfaceItem : public QQuickItem {
  private:
   QPointer<QObject> bridge_;
   std::atomic_bool frame_available_{false};
+  std::atomic_bool reset_pending_{true};
   std::unique_ptr<Impl> impl_;
 };
 

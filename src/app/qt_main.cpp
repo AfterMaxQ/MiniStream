@@ -6,8 +6,16 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QtQml/qqml.h>
+#include <QQuickWindow>
+#include <QSGRendererInterface>
 
 int main(int argc, char* argv[]) {
+#ifdef __APPLE__
+  QCoreApplication::setAttribute(Qt::AA_MacDontSwapCtrlAndMeta);
+  QQuickWindow::setGraphicsApi(QSGRendererInterface::Metal);
+#elif defined(_WIN32)
+  QQuickWindow::setGraphicsApi(QSGRendererInterface::Direct3D11);
+#endif
   QGuiApplication application(argc, argv);
   QCoreApplication::setApplicationName(QStringLiteral("MiniStream"));
   QCoreApplication::setOrganizationName(QStringLiteral("AfterMaxQ"));

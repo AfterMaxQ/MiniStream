@@ -33,6 +33,7 @@ class VideoSurfaceBridge : public QObject {
  private:
   mutable std::mutex mutex_;
   SurfaceFrame latest_;
+  bool has_frame_{};
 };
 
 }  // namespace ministream

@@ -129,7 +129,7 @@ void output_callback(void* refcon, void*, OSStatus status, VTEncodeInfoFlags,
       timestamp_us = static_cast<std::uint64_t>(seconds * 1'000'000.0);
     }
   }
-  bool keyframe = false;
+  bool keyframe = true;  // NotSync defaults to false when attachments are absent.
   if (auto attachments = CMSampleBufferGetSampleAttachmentsArray(sample, false);
       attachments && CFArrayGetCount(attachments) > 0) {
     auto* dictionary = static_cast<CFDictionaryRef>(

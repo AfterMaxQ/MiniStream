@@ -11,6 +11,11 @@ option(MINISTREAM_BUILD_TOOLS "Build MiniStream diagnostic tools" ON)
 option(MINISTREAM_BUILD_UI "Build the Qt Quick desktop UI" OFF)
 option(MINISTREAM_ENABLE_PACKAGING "Configure native installer packaging" OFF)
 
+if(APPLE)
+  # Configure Objective-C++ before SDL/dependency checks, also with Ninja/CLT.
+  enable_language(OBJCXX)
+endif()
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Warnings)
 include(Dependencies)
@@ -26,7 +31,6 @@ add_subdirectory(src/app)
 if(WIN32)
   add_subdirectory(src/windows)
 elseif(APPLE)
-  enable_language(OBJCXX)
   add_subdirectory(src/macos)
 endif()
 

@@ -51,6 +51,8 @@ class MfDecoder {
   [[nodiscard]] bool ready() const noexcept;
 
  private:
+  bool select_output_type();
+  Result<void, MfDecodeError> drain_output();
   struct Impl;
   std::unique_ptr<Impl> impl_;
 };

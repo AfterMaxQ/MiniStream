@@ -1,0 +1,49 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 30, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "desktop",
+      "hidden": true,
+      "cacheVariables": {
+        "MINISTREAM_BUILD_UI": "ON",
+        "MINISTREAM_BUILD_TESTS": "OFF",
+        "MINISTREAM_BUILD_TOOLS": "OFF",
+        "MINISTREAM_ENABLE_PACKAGING": "ON"
+      }
+    },
+    {
+      "name": "macos",
+      "displayName": "macOS desktop (native architecture)",
+      "inherits": "desktop",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/macos",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_PREFIX_PATH": "$penv{HOME}/Qt/6.11.2/macos"
+      }
+    },
+    {
+      "name": "windows",
+      "displayName": "Windows desktop (x64)",
+      "inherits": "desktop",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/out/build/windows",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "$penv{QTDIR}",
+        "MINISTREAM_NVENC_SDK_ROOT": "$penv{MINISTREAM_NVENC_SDK_ROOT}"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "macos", "configurePreset": "macos", "jobs": 4 },
+    { "name": "windows", "configurePreset": "windows", "configuration": "Release", "jobs": 4 }
+  ],
+  "packagePresets": [
+    { "name": "macos", "configurePreset": "macos", "generators": ["DragNDrop"] },
+    { "name": "windows", "configurePreset": "windows", "configurations": ["Release"], "generators": ["NSIS"] }
+  ]
+}

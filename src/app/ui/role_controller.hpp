@@ -33,6 +33,7 @@ class RoleController final : public QObject {
   Q_PROPERTY(QString pairingCode READ pairingCode NOTIFY stateChanged)
   Q_PROPERTY(QString selectedDeviceLabel READ selectedDeviceLabel NOTIFY stateChanged)
   Q_PROPERTY(QString statusText READ statusText NOTIFY stateChanged)
+  Q_PROPERTY(QString videoStatus READ videoStatus NOTIFY stateChanged)
   Q_PROPERTY(bool videoReady READ videoReady NOTIFY stateChanged)
   Q_PROPERTY(bool audioReady READ audioReady NOTIFY stateChanged)
   Q_PROPERTY(bool inputReady READ inputReady NOTIFY stateChanged)
@@ -65,6 +66,7 @@ class RoleController final : public QObject {
   [[nodiscard]] QString pairingCode() const;
   [[nodiscard]] QString selectedDeviceLabel() const;
   [[nodiscard]] QString statusText() const;
+  [[nodiscard]] QString videoStatus() const;
   [[nodiscard]] bool videoReady() const noexcept;
   [[nodiscard]] bool audioReady() const noexcept;
   [[nodiscard]] bool inputReady() const noexcept;

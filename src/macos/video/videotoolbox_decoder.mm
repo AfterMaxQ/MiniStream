@@ -19,6 +19,7 @@ struct VideoToolboxDecoder::Impl {
   CVPixelBufferRef latest{};
   std::uint64_t latest_timestamp_us{};
   std::mutex mutex;
+  OSStatus last_output_status{noErr};
 };
 
 namespace {
@@ -70,11 +71,13 @@ std::vector<NalUnit> split_annex_b(std::span<const std::byte> bytes) {
 
 void output_callback(void* refcon, void*, OSStatus status, VTDecodeInfoFlags,
                      CVImageBufferRef image, CMTime presentation_time, CMTime) {
-  if (status != noErr || image == nullptr || refcon == nullptr) {
+  if (refcon == nullptr) {
     return;
   }
   auto* impl = static_cast<VideoToolboxDecoder::Impl*>(refcon);
   std::scoped_lock lock(impl->mutex);
+  impl->last_output_status = status;
+  if (status != noErr || image == nullptr) return;
   if (impl->latest != nullptr) {
     CVPixelBufferRelease(impl->latest);
   }
@@ -93,7 +96,7 @@ VideoToolboxDecoder& VideoToolboxDecoder::operator=(VideoToolboxDecoder&&) noexc
 
 Result<void, VideoDecodeError> VideoToolboxDecoder::initialize(const CodecConfig& config) {
   stop();
-  if (config.width == 0 || config.height == 0 || config.parameter_sets.empty()) {
+  if (config.width == 0 || config.height == 0 || config.fps == 0 || config.parameter_sets.empty()) {
     return Result<void, VideoDecodeError>::err(VideoDecodeError::InvalidConfig);
   }
   const auto nals = split_annex_b(config.parameter_sets);
@@ -136,15 +139,22 @@ Result<void, VideoDecodeError> VideoToolboxDecoder::initialize(const CodecConfig
   }
 
   CFDictionaryRef spec = (__bridge CFDictionaryRef)@{
-      (__bridge NSString*)kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder:
+      (__bridge NSString*)kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder:
           @YES};
   VTDecompressionOutputCallbackRecord callback{output_callback, impl_.get()};
-  if (VTDecompressionSessionCreate(kCFAllocatorDefault, impl_->format, spec, nullptr,
+  CFDictionaryRef attributes = (__bridge CFDictionaryRef)@{
+      (__bridge NSString*)kCVPixelBufferMetalCompatibilityKey: @YES,
+      (__bridge NSString*)kCVPixelBufferIOSurfacePropertiesKey: @{},
+      (__bridge NSString*)kCVPixelBufferPixelFormatTypeKey:
+          @(config.hdr10 ? kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange
+                        : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)};
+  if (VTDecompressionSessionCreate(kCFAllocatorDefault, impl_->format, spec, attributes,
                                    &callback, &impl_->session) != noErr) {
     stop();
     return Result<void, VideoDecodeError>::err(VideoDecodeError::Session);
   }
   impl_->config = config;
+  VTSessionSetProperty(impl_->session, kVTDecompressionPropertyKey_RealTime, kCFBooleanTrue);
   return Result<void, VideoDecodeError>::ok();
 }
 
@@ -196,10 +206,17 @@ Result<void, VideoDecodeError> VideoToolboxDecoder::decode(
   }
   // Run the callback before returning so the bridge can publish only the
   // newest frame and never queue an unbounded decoded-frame backlog.
+  {
+    std::scoped_lock lock(impl_->mutex);
+    impl_->last_output_status = noErr;
+  }
   const auto status = VTDecompressionSessionDecodeFrame(impl_->session, sample, 0,
                                                         nullptr, nullptr);
+  const auto waited = VTDecompressionSessionWaitForAsynchronousFrames(impl_->session);
   CFRelease(sample);
-  return status == noErr ? Result<void, VideoDecodeError>::ok()
+  std::scoped_lock lock(impl_->mutex);
+  return status == noErr && waited == noErr && impl_->last_output_status == noErr
+                         ? Result<void, VideoDecodeError>::ok()
                          : Result<void, VideoDecodeError>::err(VideoDecodeError::Decode);
 }
 

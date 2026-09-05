@@ -18,15 +18,12 @@ endif()
 target_include_directories(ministream_macos_platform PUBLIC "${PROJECT_SOURCE_DIR}/src")
 target_link_libraries(
   ministream_macos_platform
-  PUBLIC MiniStream::Core SDL3::SDL3
-  PRIVATE "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo"
+  PUBLIC MiniStream::Core SDL3::SDL3 Qt6::Core
+  PRIVATE "-framework Foundation" "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo"
           "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation"
           "-framework CoreGraphics" "-framework ApplicationServices" "-framework IOSurface"
           "-framework ScreenCaptureKit"
 )
-if(NOT MINISTREAM_BUILD_UI)
-  target_link_libraries(ministream_macos_platform PUBLIC Qt6::Core)
-endif()
 set_target_properties(ministream_macos_platform PROPERTIES AUTOMOC ON)
 ministream_set_warnings(ministream_macos_platform)
 
@@ -52,6 +49,7 @@ if(MINISTREAM_BUILD_UI)
   target_link_libraries(
     ministream
     PRIVATE ministream_app ministream_macos_platform Qt6::Quick Qt6::Qml Qt6::QuickControls2
+            "-framework CoreImage" "-framework Metal"
   )
   ministream_add_qml_ui(ministream)
 endif()
@@ -64,6 +62,7 @@ if(MINISTREAM_BUILD_UI)
   set_target_properties(
     ministream
     PROPERTIES
+      OUTPUT_NAME "MiniStream"
       MACOSX_BUNDLE_BUNDLE_NAME "MiniStream"
       MACOSX_BUNDLE_GUI_IDENTIFIER "com.aftermaxq.ministream"
       MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
@@ -72,6 +71,8 @@ if(MINISTREAM_BUILD_UI)
       MACOSX_BUNDLE_INFO_PLIST "${PROJECT_SOURCE_DIR}/packaging/macos/Info.plist.in"
   )
   install(TARGETS ministream BUNDLE DESTINATION . COMPONENT Runtime)
+  install(FILES "$<TARGET_FILE:SDL3::SDL3>"
+          DESTINATION "MiniStream.app/Contents/Frameworks" COMPONENT Runtime)
 endif()
 if(MINISTREAM_BUILD_UI)
   ministream_install_qt_runtime(ministream)

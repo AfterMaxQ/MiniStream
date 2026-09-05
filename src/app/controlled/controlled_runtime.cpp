@@ -38,6 +38,8 @@ ControlledRuntime::ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
         }
         if (input.kind == DesktopInputKind::ReleaseAll) {
           backend_->clear_input();
+          backend_->clear_gamepad();
+          last_gamepad_receive_.reset();
           return true;
         }
         return backend_->inject_input(input);
@@ -132,6 +134,7 @@ void ControlledRuntime::stop() noexcept {
   }
   audio_sequence_ = 0;
   gamepad_sequence_filter_ = GamepadSequenceFilter{};
+  last_gamepad_receive_.reset();
   reliable_input_receiver_.reset();
   discovery_.reset();
   last_discovery_error_.reset();
@@ -311,6 +314,7 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
         } else if (const auto gamepad = decode_gamepad_packet(*payload); gamepad && backend_ &&
                    gamepad_sequence_filter_.accept(gamepad->sequence)) {
           (void)backend_->submit_gamepad(gamepad->state);
+          last_gamepad_receive_ = SteadyClock::now();
         }
       }
       return;
@@ -342,6 +346,7 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
           clear_peer_session();
         } else if (is_request_keyframe_control(*payload) && backend_) {
           backend_->request_keyframe();
+          last_codec_config_send_.reset();
         }
       }
       return;
@@ -492,16 +497,18 @@ void ControlledRuntime::send_pending_video(SteadyClock::time_point now) {
   if (!media_sender_ || !session_ || !crypto_ || !backend_) {
     return;
   }
-  if (const auto frame = backend_->next_video(); frame) {
-    media_sender_->enqueue_video(*frame, now);
-    const auto config = backend_->codec_config();
-    if (!config.parameter_sets.empty()) {
-      constexpr auto kCodecConfigRetryInterval = std::chrono::milliseconds{500};
-      const bool changed = !last_codec_config_sent_ || *last_codec_config_sent_ != config;
-      const bool retry = !last_codec_config_send_ ||
-                         now - *last_codec_config_send_ >= kCodecConfigRetryInterval;
-      if (changed || retry) {
-        const auto payload = encode_codec_config(config);
+  const auto frame = backend_->next_video();
+  // Capturing/encoding may take longer than a packet's queue deadline.
+  now = SteadyClock::now();
+  const auto config = backend_->codec_config();
+  if (!config.parameter_sets.empty()) {
+    constexpr auto kCodecConfigRetryInterval = std::chrono::milliseconds{500};
+    const bool changed = !last_codec_config_sent_ || *last_codec_config_sent_ != config;
+    const bool retry = !last_codec_config_send_ ||
+                       now - *last_codec_config_send_ >= kCodecConfigRetryInterval;
+    if (changed || retry) {
+      const auto payload = encode_codec_config(config);
+      if (!payload.empty()) {
         if (const auto packet = crypto_->seal(PacketType::Control, payload);
             packet && session_->reply(packet->bytes)) {
           last_codec_config_sent_ = config;
@@ -509,6 +516,14 @@ void ControlledRuntime::send_pending_video(SteadyClock::time_point now) {
         }
       }
     }
+  }
+  if (frame) {
+    // P-frames behind a paced IDR must survive until that IDR has left the
+    // queue. Dropping all of them at 25 ms otherwise causes an IDR loop.
+    const auto budget = frame->keyframe ? Microseconds{500'000} : std::clamp(
+        scheduler_->estimated_video_queue_delay() + Microseconds{25'000},
+        Microseconds{25'000}, Microseconds{500'000});
+    if (media_sender_->enqueue_video(*frame, now, budget) == 0) backend_->request_keyframe();
   }
 }
 
@@ -526,6 +541,7 @@ void ControlledRuntime::send_pending_audio(SteadyClock::time_point now) {
     const auto encoded = audio_encoder_->encode(
         std::span<const float>{audio_pending_.data(), kOpusFrameSamplesPerChannel * 2U});
     if (encoded) {
+      now = SteadyClock::now();
       media_sender_->enqueue_audio(
           {audio_sequence_++, pcm->host_timestamp_us,
            static_cast<std::uint16_t>(kOpusFrameSamplesPerChannel), *encoded},
@@ -591,6 +607,7 @@ void ControlledRuntime::tick() {
       continue;
     }
     process_datagram(incoming);
+    if (!session_) return;
   }
   if (streaming() && last_authenticated_receive_ &&
       now - *last_authenticated_receive_ >= timing_.liveness_timeout) {
@@ -608,6 +625,10 @@ void ControlledRuntime::tick() {
   if (!streaming()) {
     return;
   }
+  if (last_gamepad_receive_ && now - *last_gamepad_receive_ >= std::chrono::milliseconds{250}) {
+    backend_->clear_gamepad();
+    last_gamepad_receive_.reset();
+  }
   tick_confirmation_grace(now);
   send_heartbeat(now);
   send_pending_rumble();
@@ -618,7 +639,7 @@ void ControlledRuntime::tick() {
   }
   constexpr std::size_t kMaxSendPacketsPerTick = 256;
   bool fatal_send_error{};
-  scheduler_->consume_ready(now, kMaxSendPacketsPerTick, [&](const Datagram& datagram) {
+  scheduler_->consume_ready(SteadyClock::now(), kMaxSendPacketsPerTick, [&](const Datagram& datagram) {
     const auto result = session_->reply(datagram.bytes);
     if (result) {
       return true;
@@ -706,6 +727,7 @@ void ControlledRuntime::clear_peer_session() noexcept {
   last_feedback_sequence_.reset();
   last_feedback_report_.reset();
   telemetry_ = StreamAggregator{};
+  last_gamepad_receive_.reset();
   if (session_) {
     session_->clear_peer();
   }

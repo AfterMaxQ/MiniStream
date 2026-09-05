@@ -1,4 +1,5 @@
 #include "windows/video/nvenc_encoder.hpp"
+#include "core/video/annex_b.hpp"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -126,6 +127,8 @@ Result<void, NvencError> NvencEncoder::initialize(
   encode_config.rcParams.averageBitRate = config.bitrate_bps;
   encode_config.rcParams.maxBitRate = config.bitrate_bps;
   encode_config.rcParams.zeroReorderDelay = 1;
+  encode_config.rcParams.enableLookahead = 0;
+  encode_config.rcParams.lookaheadDepth = 0;
   if (config.codec == VideoCodec::H264) {
     encode_config.profileGUID = NV_ENC_H264_PROFILE_HIGH_GUID;
     encode_config.encodeCodecConfig.h264Config.repeatSPSPPS = 1;
@@ -254,7 +257,8 @@ Result<EncodedFrame, NvencError> NvencEncoder::encode(
     const auto* begin = static_cast<const std::byte*>(lock.bitstreamBufferPtr);
     result.bytes.assign(begin, begin + lock.bitstreamSizeInBytes);
     if (result.keyframe) {
-      impl_->codec_config.parameter_sets = result.bytes;
+      auto sets = extract_parameter_sets(impl_->config.codec, result.bytes);
+      if (!sets.empty()) impl_->codec_config.parameter_sets = std::move(sets);
     }
   }
   if (locked == NV_ENC_SUCCESS) {

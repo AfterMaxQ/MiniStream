@@ -21,6 +21,8 @@ std::uint32_t get(std::span<const std::byte> in, std::size_t offset) {
 
 std::vector<std::byte> encode_codec_config(const CodecConfig& config) {
   if (config.width == 0 || config.height == 0 || config.fps == 0 ||
+      (config.codec != VideoCodec::H264 && config.codec != VideoCodec::Hevc) ||
+      config.parameter_sets.empty() ||
       config.parameter_sets.size() > kMaxSealedPayloadBytes - 17U) {
     return {};
   }
@@ -40,7 +42,9 @@ std::vector<std::byte> encode_codec_config(const CodecConfig& config) {
 }
 
 std::optional<CodecConfig> decode_codec_config(std::span<const std::byte> bytes) {
-  if (bytes.size() < 17U || std::to_integer<std::uint8_t>(bytes[0]) != 1U ||
+  if (bytes.size() < 17U || bytes.size() > kMaxSealedPayloadBytes ||
+      (bytes[2] != std::byte{0} && bytes[2] != std::byte{1}) ||
+      std::to_integer<std::uint8_t>(bytes[0]) != 1U ||
       (std::to_integer<std::uint8_t>(bytes[1]) != static_cast<std::uint8_t>(VideoCodec::H264) &&
        std::to_integer<std::uint8_t>(bytes[1]) != static_cast<std::uint8_t>(VideoCodec::Hevc))) {
     return std::nullopt;

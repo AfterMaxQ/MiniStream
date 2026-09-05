@@ -8,6 +8,7 @@ RemoteInputRouter::RemoteInputRouter(InputCapture& capture, Sender sender)
     : capture_(capture), sender_(std::move(sender)) {}
 
 bool RemoteInputRouter::begin() {
+  if (active()) return true;
   if (!capture_.enter_remote()) {
     return false;
   }

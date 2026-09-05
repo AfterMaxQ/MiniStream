@@ -147,7 +147,7 @@ Result<void, CaptureError> DxgiCapture::initialize() {
   impl_->capture_info = {};
   constexpr UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
   D3D_FEATURE_LEVEL created_level{};
-  if (FAILED(D3D11CreateDevice(
+  if (!impl_->device && FAILED(D3D11CreateDevice(
           nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, nullptr, 0,
           D3D11_SDK_VERSION, &impl_->device, &created_level, &impl_->context))) {
     return Result<void, CaptureError>::err(CaptureError::Initialize);
@@ -226,14 +226,29 @@ Result<CapturedFrame, CaptureError> DxgiCapture::acquire(Microseconds timeout) {
 
   Microsoft::WRL::ComPtr<ID3D11Texture2D> texture;
   const auto converted = resource.As(&texture);
-  impl_->duplication->ReleaseFrame();
   if (FAILED(converted)) {
+    impl_->duplication->ReleaseFrame();
     return Result<CapturedFrame, CaptureError>::err(CaptureError::Acquire);
   }
   D3D11_TEXTURE2D_DESC description{};
   texture->GetDesc(&description);
+  // The duplication surface is no longer ours after ReleaseFrame. Copy it
+  // while acquired so NVENC (and the static-desktop cache) owns stable pixels.
+  auto copy_description = description;
+  copy_description.Usage = D3D11_USAGE_DEFAULT;
+  copy_description.CPUAccessFlags = 0;
+  copy_description.MiscFlags = 0;
+  copy_description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> owned;
+  if (FAILED(impl_->device->CreateTexture2D(&copy_description, nullptr, &owned))) {
+    impl_->duplication->ReleaseFrame();
+    return Result<CapturedFrame, CaptureError>::err(CaptureError::Acquire);
+  }
+  impl_->context->CopyResource(owned.Get(), texture.Get());
+  impl_->context->Flush();
+  impl_->duplication->ReleaseFrame();
   return Result<CapturedFrame, CaptureError>::ok(
-      {std::move(texture), impl_->next_frame_id++, SteadyClock::now(),
+      {std::move(owned), impl_->next_frame_id++, SteadyClock::now(),
        description.Format, description.Width, description.Height});
 }
 

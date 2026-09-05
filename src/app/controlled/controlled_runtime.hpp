@@ -117,6 +117,7 @@ class ControlledRuntime {
   double current_fec_ratio_{0.03};
   std::optional<CodecConfig> last_codec_config_sent_;
   std::optional<SteadyClock::time_point> last_codec_config_send_;
+  std::optional<SteadyClock::time_point> last_gamepad_receive_;
   std::optional<std::uint32_t> last_feedback_sequence_;
   std::optional<FeedbackReport> last_feedback_report_;
   std::unique_ptr<RateController> rate_controller_;

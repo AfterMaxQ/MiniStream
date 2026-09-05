@@ -20,6 +20,8 @@ class MacRemoteBackend final : public RemoteBackend {
   bool start() override;
   void stop() noexcept override;
   bool configure_video(const CodecConfig& config) override;
+  void reset_video() noexcept override;
+  void tick(SteadyClock::time_point now) noexcept override;
   bool decode_video(std::span<const std::byte> encoded,
                     std::uint64_t timestamp_us) override;
   bool play_audio(std::span<const float> interleaved_stereo) override;

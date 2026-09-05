@@ -48,6 +48,10 @@ std::size_t MediaSender::enqueue_video(const EncodedFrame& frame,
                                        Microseconds deadline) {
   std::size_t queued = 0;
   const auto fec_frame = VideoFecEncoder{session_id_}.encode_frame(frame, fec_ratio_);
+  const auto packets = fec_frame.video_datagrams.size() + fec_frame.fec_datagrams.size();
+  if (packets > scheduler_.remaining_capacity(Priority::Video)) return 0;
+  // An IDR can be much larger than a P-frame. Allow it to traverse the paced
+  // queue as a whole; never evict its first shards to enqueue its last shards.
   for (const auto& packet : fec_frame.video_datagrams) {
     const auto bytes = std::span<const std::byte>{packet.bytes};
     const auto common = decode_common_header(bytes.first<kCommonHeaderBytes>());

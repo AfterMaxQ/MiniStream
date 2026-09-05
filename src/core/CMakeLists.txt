@@ -35,6 +35,7 @@ add_library(
   telemetry/feedback_wire.cpp
   config/stream_profile.cpp
   video/codec_config_wire.cpp
+  video/annex_b.cpp
   session/discovery.cpp
   security/pairing_wire.cpp
 )
