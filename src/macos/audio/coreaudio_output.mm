@@ -13,7 +13,7 @@ namespace ministream {
 struct CoreAudioOutput::Impl {
   AudioUnit unit{};
   mutable std::mutex mutex;
-  static constexpr std::size_t kMaxSamples = 48'000U * 2U / 5U;  // 200 ms
+  static constexpr std::size_t kMaxSamples = 48'000U * 2U * 60U / 1000U;  // 60 ms
   std::array<float, kMaxSamples> samples{};
   std::size_t read_index{};
   std::size_t write_index{};
@@ -105,8 +105,11 @@ Result<void, CoreAudioError> CoreAudioOutput::push(std::span<const float> sample
     return Result<void, CoreAudioError>::err(CoreAudioError::Format);
   }
   std::scoped_lock lock(impl_->mutex);
+  if (samples.size() > Impl::kMaxSamples) samples = samples.last(Impl::kMaxSamples);
   if (samples.size() > Impl::kMaxSamples - impl_->sample_count) {
-    return Result<void, CoreAudioError>::err(CoreAudioError::Format);
+    const auto dropped = samples.size() - (Impl::kMaxSamples - impl_->sample_count);
+    impl_->read_index = (impl_->read_index + dropped) % Impl::kMaxSamples;
+    impl_->sample_count -= dropped;
   }
   for (const auto sample : samples) {
     impl_->samples[impl_->write_index] = sample;

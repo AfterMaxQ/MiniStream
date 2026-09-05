@@ -53,7 +53,8 @@ Result<void, AudioOutputError> WasapiOutput::start() {
   format.nBlockAlign = sizeof(float) * 2;
   format.nAvgBytesPerSec = format.nSamplesPerSec * format.nBlockAlign;
   if (FAILED(impl_->client->Initialize(AUDCLNT_SHAREMODE_SHARED,
-                                       AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM, 10'000'000, 0,
+                                       AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
+                                       AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY, 400'000, 0,
                                        &format, nullptr)) ||
       FAILED(impl_->client->GetBufferSize(&impl_->buffer_frames)) ||
       FAILED(impl_->client->GetService(IID_PPV_ARGS(&impl_->render))) ||
@@ -62,7 +63,6 @@ Result<void, AudioOutputError> WasapiOutput::start() {
     return Result<void, AudioOutputError>::err(AudioOutputError::Start);
   }
   impl_->pending.clear();
-  impl_->pending.resize(0);
   impl_->started = true;
   return Result<void, AudioOutputError>::ok();
 }
@@ -74,9 +74,11 @@ Result<void, AudioOutputError> WasapiOutput::push(std::span<const float> samples
   if (samples.empty() || samples.size() % 2 != 0) {
     return Result<void, AudioOutputError>::err(AudioOutputError::Format);
   }
-  constexpr std::size_t max_samples = 48'000U * 2U / 5U;
+  constexpr std::size_t max_samples = 48'000U * 2U * 60U / 1000U;
+  if (samples.size() > max_samples) samples = samples.last(max_samples);
   if (impl_->pending.size() + samples.size() > max_samples) {
-    return Result<void, AudioOutputError>::err(AudioOutputError::BufferFull);
+    const auto dropped = impl_->pending.size() + samples.size() - max_samples;
+    impl_->pending.erase(impl_->pending.begin(), impl_->pending.begin() + dropped);
   }
   impl_->pending.insert(impl_->pending.end(), samples.begin(), samples.end());
 

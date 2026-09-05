@@ -101,9 +101,10 @@ class RemoteRuntime {
   std::unique_ptr<MediaReceiver> media_receiver_;
   std::unique_ptr<SessionCrypto> crypto_;
   std::unique_ptr<OpusDecoder48kStereo> audio_decoder_;
-  AudioJitterBuffer audio_jitter_;
+  AudioJitterBuffer audio_jitter_{{Microseconds{20'000}, Microseconds{60'000}}};
   std::uint32_t expected_audio_sequence_{};
   bool audio_primed_{};
+  unsigned missing_audio_frames_{};
   std::optional<SteadyClock::time_point> next_audio_playout_;
   std::optional<DeviceIdentity> identity_;
   std::optional<EphemeralKeyPair> ephemeral_;

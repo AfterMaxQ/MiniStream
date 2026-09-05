@@ -29,6 +29,7 @@ class AudioJitterBuffer {
   AudioPlayoutResult pop(std::uint32_t expected_sequence);
   [[nodiscard]] bool ready_for_playout() const noexcept;
   [[nodiscard]] Microseconds buffered_duration() const;
+  [[nodiscard]] std::optional<std::uint32_t> first_sequence() const noexcept;
 
  private:
   void erase(std::uint32_t sequence);
@@ -37,6 +38,7 @@ class AudioJitterBuffer {
   std::unordered_map<std::uint32_t, AudioPacket> packets_;
   std::deque<std::uint32_t> arrival_order_;
   std::uint64_t buffered_samples_{};
+  std::optional<std::uint32_t> last_played_;
 };
 
 }  // namespace ministream

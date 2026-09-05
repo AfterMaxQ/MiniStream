@@ -642,6 +642,9 @@ void RemoteRuntime::play_audio(SteadyClock::time_point now) {
       return;
     }
     audio_primed_ = true;
+    expected_audio_sequence_ = *audio_jitter_.first_sequence();
+    missing_audio_frames_ = 0;
+    audio_decoder_->reset();
     next_audio_playout_ = now;
   }
   if (!next_audio_playout_ || now < *next_audio_playout_) {
@@ -652,13 +655,32 @@ void RemoteRuntime::play_audio(SteadyClock::time_point now) {
   constexpr unsigned kMaxCatchUpFrames = 4;
   unsigned frames{};
   while (frames < kMaxCatchUpFrames && now >= *next_audio_playout_) {
+    if (const auto first = audio_jitter_.first_sequence(); first &&
+        static_cast<std::int32_t>(*first - expected_audio_sequence_) > 2) {
+      // Catch up to live audio after a queue overflow or a delayed UI tick.
+      expected_audio_sequence_ = *first;
+      audio_decoder_->reset();
+    }
     const auto playout = audio_jitter_.pop(expected_audio_sequence_);
+    bool decoded = false;
     if (playout.kind == AudioPlayoutKind::Packet && playout.packet) {
       if (const auto samples = audio_decoder_->decode(playout.packet->opus); samples) {
         backend_->play_audio(*samples);
+        decoded = true;
       }
-    } else if (const auto samples = audio_decoder_->decode_loss(); samples) {
-      backend_->play_audio(*samples);
+    }
+    if (decoded) {
+      missing_audio_frames_ = 0;
+    } else {
+      if (const auto samples = audio_decoder_->decode_loss(); samples) backend_->play_audio(*samples);
+      if (++missing_audio_frames_ >= 3) {
+        // Loopback sources may stop producing packets during silence. Re-prime
+        // from the next received sequence instead of advancing PLC forever.
+        audio_primed_ = false;
+        audio_jitter_ = AudioJitterBuffer{{Microseconds{20'000}, Microseconds{60'000}}};
+        next_audio_playout_.reset();
+        return;
+      }
     }
     ++expected_audio_sequence_;
     *next_audio_playout_ += kAudioPlayoutInterval;
@@ -744,8 +766,9 @@ void RemoteRuntime::disconnect_session() noexcept {
   video_status_ = "Waiting for video configuration";
   expected_audio_sequence_ = 0;
   audio_primed_ = false;
+  missing_audio_frames_ = 0;
   next_audio_playout_.reset();
-  audio_jitter_ = AudioJitterBuffer{};
+  audio_jitter_ = AudioJitterBuffer{{Microseconds{20'000}, Microseconds{60'000}}};
   gamepad_coalescer_ = InputCoalescer{};
   reliable_input_ = ReliableControl{};
   session_keys_.reset();

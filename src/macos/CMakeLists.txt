@@ -1,3 +1,5 @@
+set_source_files_properties(video/cgdisplaystream_capture.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+
 add_library(
   ministream_macos_platform
   STATIC

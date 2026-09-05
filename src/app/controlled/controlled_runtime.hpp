@@ -88,6 +88,7 @@ class ControlledRuntime {
   std::unique_ptr<MediaSender> media_sender_;
   std::unique_ptr<OpusEncoder48kStereo> audio_encoder_;
   std::vector<float> audio_pending_;
+  std::optional<std::uint64_t> audio_pending_timestamp_us_;
   std::mutex rumble_mutex_;
   std::deque<RumblePacket> rumble_pending_;
   std::uint32_t audio_sequence_{};

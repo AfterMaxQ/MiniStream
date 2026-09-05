@@ -64,20 +64,9 @@ elseif(APPLE)
   set(CPACK_PACKAGE_FILE_NAME "MiniStream-${PROJECT_VERSION}-macOS-${CMAKE_SYSTEM_PROCESSOR}")
   set(CPACK_DMG_VOLUME_NAME "MiniStream")
   set(CPACK_DMG_FORMAT UDZO)
-  get_filename_component(_ministream_sodium_name "${MINISTREAM_SODIUM_LIBRARY}" NAME)
-  install(
-    FILES "${MINISTREAM_SODIUM_LIBRARY}"
-    DESTINATION "MiniStream.app/Contents/Frameworks"
-    RENAME "${_ministream_sodium_name}"
-    COMPONENT Runtime
-  )
-  install(CODE "
-    set(_ministream_binary \"\${CMAKE_INSTALL_PREFIX}/MiniStream.app/Contents/MacOS/MiniStream\")
-    set(_ministream_sodium \"\${CMAKE_INSTALL_PREFIX}/MiniStream.app/Contents/Frameworks/${_ministream_sodium_name}\")
-    execute_process(COMMAND install_name_tool -id \"@rpath/${_ministream_sodium_name}\" \"\${_ministream_sodium}\")
-    execute_process(COMMAND install_name_tool -add_rpath \"@loader_path/../Frameworks\" \"\${_ministream_binary}\")
-    execute_process(COMMAND install_name_tool -change \"${MINISTREAM_SODIUM_LIBRARY}\" \"@rpath/${_ministream_sodium_name}\" \"\${_ministream_binary}\")
-  ")
+  # Qt's deployment step copies libsodium's actual dylib, rewrites load paths,
+  # and signs the bundle. Copying the Homebrew symlink afterward adds a broken
+  # Cellar-relative link and invalidates the deployed bundle.
 endif()
 
 include(CPack)

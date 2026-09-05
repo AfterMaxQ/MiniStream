@@ -128,6 +128,7 @@ void ControlledRuntime::stop() noexcept {
   current_fec_ratio_ = 0.03;
   audio_encoder_.reset();
   audio_pending_.clear();
+  audio_pending_timestamp_us_.reset();
   {
     std::scoped_lock lock(rumble_mutex_);
     rumble_pending_.clear();
@@ -531,24 +532,36 @@ void ControlledRuntime::send_pending_audio(SteadyClock::time_point now) {
   if (!media_sender_ || !audio_encoder_ || !audio_encoder_->ready() || !backend_) {
     return;
   }
-  const auto pcm = backend_->next_audio();
-  if (!pcm) {
-    return;
+  constexpr std::size_t kMaxPendingSamples = 48'000U * 2U * 60U / 1000U;
+  // Drain capture bursts, retaining at most 60 ms of fresh audio.
+  for (unsigned count = 0; count < 32; ++count) {
+    const auto pcm = backend_->next_audio();
+    if (!pcm) break;
+    if (pcm->frames == 0 || pcm->interleaved_stereo.size() != static_cast<std::size_t>(pcm->frames) * 2U)
+      continue;
+    if (pcm->discontinuity) audio_pending_.clear();
+    if (audio_pending_.empty()) audio_pending_timestamp_us_ = pcm->host_timestamp_us;
+    audio_pending_.insert(audio_pending_.end(), pcm->interleaved_stereo.begin(),
+                          pcm->interleaved_stereo.end());
+    if (audio_pending_.size() > kMaxPendingSamples) {
+      const auto dropped = audio_pending_.size() - kMaxPendingSamples;
+      audio_pending_.erase(audio_pending_.begin(), audio_pending_.begin() + dropped);
+      *audio_pending_timestamp_us_ += dropped / 2U * 1'000'000ULL / 48'000ULL;
+    }
   }
-  audio_pending_.insert(audio_pending_.end(), pcm->interleaved_stereo.begin(),
-                        pcm->interleaved_stereo.end());
   while (audio_pending_.size() >= kOpusFrameSamplesPerChannel * 2U) {
     const auto encoded = audio_encoder_->encode(
         std::span<const float>{audio_pending_.data(), kOpusFrameSamplesPerChannel * 2U});
     if (encoded) {
       now = SteadyClock::now();
       media_sender_->enqueue_audio(
-          {audio_sequence_++, pcm->host_timestamp_us,
+          {audio_sequence_++, *audio_pending_timestamp_us_,
            static_cast<std::uint16_t>(kOpusFrameSamplesPerChannel), *encoded},
           now);
     }
     audio_pending_.erase(audio_pending_.begin(),
                          audio_pending_.begin() + kOpusFrameSamplesPerChannel * 2U);
+    *audio_pending_timestamp_us_ += 10'000;
   }
 }
 
@@ -623,6 +636,8 @@ void ControlledRuntime::tick() {
     }
   }
   if (!streaming()) {
+    // Capture starts while advertising; do not replay pairing-time audio later.
+    for (unsigned count = 0; backend_ && count < 32 && backend_->next_audio(); ++count) {}
     return;
   }
   if (last_gamepad_receive_ && now - *last_gamepad_receive_ >= std::chrono::milliseconds{250}) {
@@ -707,6 +722,7 @@ void ControlledRuntime::clear_peer_session() noexcept {
   current_fec_ratio_ = 0.03;
   audio_encoder_.reset();
   audio_pending_.clear();
+  audio_pending_timestamp_us_.reset();
   {
     std::scoped_lock lock(rumble_mutex_);
     rumble_pending_.clear();

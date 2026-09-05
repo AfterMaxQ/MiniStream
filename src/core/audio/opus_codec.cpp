@@ -1,4 +1,6 @@
 #include "core/audio/opus_codec.hpp"
+#include "core/audio/audio_packet.hpp"
+#include "core/transport/packetizer.hpp"
 
 #include <opus.h>
 
@@ -37,7 +39,7 @@ Result<std::vector<std::byte>, AudioCodecError> OpusEncoder48kStereo::encode(
     return Result<std::vector<std::byte>, AudioCodecError>::err(
         AudioCodecError::InvalidFrame);
   }
-  std::vector<std::byte> packet(1200);
+  std::vector<std::byte> packet(kMaxSealedPayloadBytes - kAudioHeaderBytes);
   const auto bytes = opus_encode_float(
       static_cast<OpusEncoder*>(encoder_), interleaved_stereo.data(),
       static_cast<int>(kOpusFrameSamplesPerChannel),
@@ -78,6 +80,10 @@ Result<std::vector<float>, AudioCodecError> OpusDecoder48kStereo::decode_loss() 
   return decode_impl(nullptr, 0, false);
 }
 
+void OpusDecoder48kStereo::reset() noexcept {
+  if (decoder_) opus_decoder_ctl(static_cast<OpusDecoder*>(decoder_), OPUS_RESET_STATE);
+}
+
 Result<std::vector<float>, AudioCodecError> OpusDecoder48kStereo::decode_impl(
     const unsigned char* packet, std::size_t bytes, bool fec) {
   if (!decoder_) {
@@ -87,7 +93,7 @@ Result<std::vector<float>, AudioCodecError> OpusDecoder48kStereo::decode_impl(
   const auto frames = opus_decode_float(
       static_cast<OpusDecoder*>(decoder_), packet, static_cast<opus_int32>(bytes),
       output.data(), static_cast<int>(kOpusFrameSamplesPerChannel), fec ? 1 : 0);
-  if (frames < 0) {
+  if (frames != static_cast<int>(kOpusFrameSamplesPerChannel)) {
     return Result<std::vector<float>, AudioCodecError>::err(AudioCodecError::Decode);
   }
   output.resize(static_cast<std::size_t>(frames) * 2);

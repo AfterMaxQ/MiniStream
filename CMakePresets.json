@@ -21,6 +21,7 @@
       "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "15.0",
         "CMAKE_PREFIX_PATH": "$penv{HOME}/Qt/6.11.2/macos"
       }
     },
