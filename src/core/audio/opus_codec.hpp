@@ -37,6 +37,7 @@ class OpusDecoder48kStereo {
   [[nodiscard]] bool ready() const noexcept;
   Result<std::vector<float>, AudioCodecError> decode(std::span<const std::byte> packet);
   Result<std::vector<float>, AudioCodecError> decode_loss();
+  void reset() noexcept;
 
  private:
   Result<std::vector<float>, AudioCodecError> decode_impl(

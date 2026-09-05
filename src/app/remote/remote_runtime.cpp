@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <random>
 #include <utility>
 
@@ -120,7 +121,6 @@ bool RemoteRuntime::begin_discovery(Microseconds timeout) {
     hosts_.clear();
     return false;
   }
-  hosts_.clear();
   return true;
 }
 
@@ -130,6 +130,7 @@ bool RemoteRuntime::connect(std::size_t index) {
   }
   disconnect_session();
   selected_host_ = hosts_[index];
+  if (discovery_) discovery_->stop();
   session_ = std::make_unique<UdpEndpoint>();
   if (!session_->bind(0) ||
       !session_->set_remote(selected_host_->address, selected_host_->session_port)) {
@@ -205,7 +206,8 @@ void RemoteRuntime::finish_streaming() {
   session_keys_ = *keys;
   crypto_ = std::make_unique<SessionCrypto>(
       session_id_, session_keys_->tx, session_keys_->rx, 0x4D535443U, 0x4D535448U);
-  media_receiver_ = std::make_unique<MediaReceiver>(session_id_, *crypto_);
+  media_receiver_ = std::make_unique<MediaReceiver>(session_id_, *crypto_,
+      ReassemblyConfig{Microseconds{25'000}, 4, Microseconds{500'000}});
   audio_decoder_ = std::make_unique<OpusDecoder48kStereo>();
   if (!audio_decoder_->ready()) {
     disconnect_session();
@@ -260,8 +262,14 @@ void RemoteRuntime::toggle_input() {
 void RemoteRuntime::release_input() {
   const bool notify_peer = remote_input_active() && streaming();
   if (notify_peer) {
+    const auto now = SteadyClock::now();
+    gamepad_coalescer_.update(GamepadState{}, now);
+    if (const auto neutral = gamepad_coalescer_.flush_if_due(now + std::chrono::milliseconds{1})) {
+      send_gamepad(*neutral);
+    }
     (void)send_input({DesktopInputKind::ReleaseAll, 0, 0, 0, 0});
   }
+  if (backend_) backend_->clear_rumble();
   if (input_router_) {
     input_router_->end();
   } else {
@@ -341,8 +349,24 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
       } else if (const auto sequence = decode_input_ack_control(*payload); sequence) {
         reliable_input_.acknowledge(*sequence);
       } else if (const auto config = decode_codec_config(*payload); config) {
-        codec_configured_ = false;
-        codec_configured_ = backend_->configure_video(*config);
+        // A retry of the same configuration must not destroy reference frames.
+        if (!hello_ || config->codec != hello_->codec || config->width != hello_->width ||
+            config->height != hello_->height || config->fps != hello_->fps ||
+            config->hdr10 != hello_->hdr10) return;
+        if (!active_codec_config_ || *active_codec_config_ != *config) {
+          codec_configured_ = backend_->configure_video(*config);
+          awaiting_keyframe_ = true;
+          last_video_frame_id_.reset();
+          if (codec_configured_) {
+            active_codec_config_ = *config;
+            video_status_ = "Waiting for a key frame";
+          } else {
+            active_codec_config_.reset();
+            video_status_ = "Unable to configure the video decoder";
+            std::clog << "Video decoder rejected codec configuration\n";
+          }
+          request_keyframe(SteadyClock::now());
+        }
       }
     }
     return;
@@ -354,7 +378,7 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
     const auto received_before = media_receiver_->received_video_packets();
     if (const auto frame = media_receiver_->receive_video(incoming.datagram, SteadyClock::now());
         frame) {
-      backend_->decode_video(frame->bytes, frame->capture_timestamp_us);
+      decode_video_frame(*frame);
     }
     if (media_receiver_->received_video_packets() > received_before) {
       last_authenticated_receive_ = SteadyClock::now();
@@ -369,7 +393,7 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
             incoming.datagram, SteadyClock::now());
         frame) {
       last_authenticated_receive_ = SteadyClock::now();
-      backend_->decode_video(frame->bytes, frame->capture_timestamp_us);
+      decode_video_frame(*frame);
     }
     return;
   }
@@ -383,11 +407,33 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
   if (common->type == PacketType::Feedback) {
     if (const auto payload = crypto_->open(incoming.datagram); payload) {
       last_authenticated_receive_ = SteadyClock::now();
-      if (const auto rumble = decode_rumble_packet(*payload); rumble) {
+      if (const auto rumble = decode_rumble_packet(*payload); rumble && remote_input_active()) {
         backend_->play_rumble(rumble->low, rumble->high, rumble->duration_ms);
       }
     }
   }
+}
+
+void RemoteRuntime::decode_video_frame(const EncodedFrame& frame) {
+  if (last_video_frame_id_) {
+    const auto distance = static_cast<std::int32_t>(frame.frame_id - *last_video_frame_id_);
+    if (distance <= 0) return;  // Late or duplicated completed frames.
+    if (distance != 1 && !frame.keyframe) awaiting_keyframe_ = true;
+  }
+  if (awaiting_keyframe_ && !frame.keyframe) {
+    video_status_ = "Recovering video; waiting for a key frame";
+    request_keyframe(SteadyClock::now());
+    return;
+  }
+  if (!backend_->decode_video(frame.bytes, frame.capture_timestamp_us)) {
+    awaiting_keyframe_ = true;
+    video_status_ = "Recovering after a video decode error";
+    request_keyframe(SteadyClock::now());
+    return;
+  }
+  last_video_frame_id_ = frame.frame_id;
+  awaiting_keyframe_ = false;
+  video_status_ = "Waiting for the video surface";
 }
 
 void RemoteRuntime::process_datagram(const ReceivedDatagram& incoming) {
@@ -493,6 +539,7 @@ void RemoteRuntime::tick() {
     const auto unrecoverable_before = media_receiver_->fec_unrecoverable_frames();
     media_receiver_->expire_video(now);
     if (media_receiver_->fec_unrecoverable_frames() > unrecoverable_before) {
+      awaiting_keyframe_ = true;
       request_keyframe(now);
     }
   }
@@ -550,13 +597,13 @@ void RemoteRuntime::tick() {
     }
   }
   if (streaming()) {
+    if (!codec_configured_ || awaiting_keyframe_) request_keyframe(now);
     tick_confirmation_grace(now);
     play_audio(now);
   }
   if (streaming() && input_capture_.routes_to_remote(InputDevice::Gamepad) && backend_) {
-    if (const auto gamepad = backend_->poll_gamepad(); gamepad) {
-      gamepad_coalescer_.update(*gamepad, now);
-    }
+    // Repeated neutral state also recovers a lost unplug/release datagram.
+    gamepad_coalescer_.update(backend_->poll_gamepad().value_or(GamepadState{}), now);
     if (const auto packet = gamepad_coalescer_.flush_if_due(now); packet) {
       send_gamepad(*packet);
     }
@@ -595,6 +642,9 @@ void RemoteRuntime::play_audio(SteadyClock::time_point now) {
       return;
     }
     audio_primed_ = true;
+    expected_audio_sequence_ = *audio_jitter_.first_sequence();
+    missing_audio_frames_ = 0;
+    audio_decoder_->reset();
     next_audio_playout_ = now;
   }
   if (!next_audio_playout_ || now < *next_audio_playout_) {
@@ -605,13 +655,32 @@ void RemoteRuntime::play_audio(SteadyClock::time_point now) {
   constexpr unsigned kMaxCatchUpFrames = 4;
   unsigned frames{};
   while (frames < kMaxCatchUpFrames && now >= *next_audio_playout_) {
+    if (const auto first = audio_jitter_.first_sequence(); first &&
+        static_cast<std::int32_t>(*first - expected_audio_sequence_) > 2) {
+      // Catch up to live audio after a queue overflow or a delayed UI tick.
+      expected_audio_sequence_ = *first;
+      audio_decoder_->reset();
+    }
     const auto playout = audio_jitter_.pop(expected_audio_sequence_);
+    bool decoded = false;
     if (playout.kind == AudioPlayoutKind::Packet && playout.packet) {
       if (const auto samples = audio_decoder_->decode(playout.packet->opus); samples) {
         backend_->play_audio(*samples);
+        decoded = true;
       }
-    } else if (const auto samples = audio_decoder_->decode_loss(); samples) {
-      backend_->play_audio(*samples);
+    }
+    if (decoded) {
+      missing_audio_frames_ = 0;
+    } else {
+      if (const auto samples = audio_decoder_->decode_loss(); samples) backend_->play_audio(*samples);
+      if (++missing_audio_frames_ >= 3) {
+        // Loopback sources may stop producing packets during silence. Re-prime
+        // from the next received sequence instead of advancing PLC forever.
+        audio_primed_ = false;
+        audio_jitter_ = AudioJitterBuffer{{Microseconds{20'000}, Microseconds{60'000}}};
+        next_audio_playout_.reset();
+        return;
+      }
     }
     ++expected_audio_sequence_;
     *next_audio_playout_ += kAudioPlayoutInterval;
@@ -671,6 +740,7 @@ void RemoteRuntime::request_keyframe(SteadyClock::time_point now) {
 void RemoteRuntime::disconnect_session() noexcept {
   if (backend_) {
     backend_->clear_rumble();
+    backend_->reset_video();
   }
   if (pairing() && session_) {
     send_pairing_confirmation(false);
@@ -690,10 +760,15 @@ void RemoteRuntime::disconnect_session() noexcept {
   crypto_.reset();
   audio_decoder_.reset();
   codec_configured_ = false;
+  active_codec_config_.reset();
+  awaiting_keyframe_ = true;
+  last_video_frame_id_.reset();
+  video_status_ = "Waiting for video configuration";
   expected_audio_sequence_ = 0;
   audio_primed_ = false;
+  missing_audio_frames_ = 0;
   next_audio_playout_.reset();
-  audio_jitter_ = AudioJitterBuffer{};
+  audio_jitter_ = AudioJitterBuffer{{Microseconds{20'000}, Microseconds{60'000}}};
   gamepad_coalescer_ = InputCoalescer{};
   reliable_input_ = ReliableControl{};
   session_keys_.reset();

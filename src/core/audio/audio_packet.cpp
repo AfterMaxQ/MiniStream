@@ -1,4 +1,6 @@
 #include "core/audio/audio_packet.hpp"
+#include "core/audio/opus_codec.hpp"
+#include "core/transport/packetizer.hpp"
 
 namespace ministream {
 namespace {
@@ -17,7 +19,8 @@ std::uint64_t get(std::span<const std::byte> input) {
 }  // namespace
 
 std::vector<std::byte> encode_audio_packet(const AudioPacket& packet) {
-  if (packet.opus.size() > kMaxDatagramBytes - kAudioHeaderBytes) {
+  if (packet.opus.empty() || packet.sample_count != kOpusFrameSamplesPerChannel ||
+      packet.opus.size() > kMaxSealedPayloadBytes - kAudioHeaderBytes) {
     return {};
   }
   std::vector<std::byte> bytes;
@@ -31,7 +34,7 @@ std::vector<std::byte> encode_audio_packet(const AudioPacket& packet) {
 }
 
 std::optional<AudioPacket> decode_audio_packet(std::span<const std::byte> bytes) {
-  if (bytes.size() < kAudioHeaderBytes || bytes.size() > kMaxDatagramBytes) {
+  if (bytes.size() <= kAudioHeaderBytes || bytes.size() > kMaxSealedPayloadBytes) {
     return std::nullopt;
   }
   const auto payload_bytes = static_cast<std::size_t>(get(bytes.subspan(14, 2)));
@@ -42,7 +45,7 @@ std::optional<AudioPacket> decode_audio_packet(std::span<const std::byte> bytes)
   packet.sequence = static_cast<std::uint32_t>(get(bytes.subspan(0, 4)));
   packet.host_timestamp_us = get(bytes.subspan(4, 8));
   packet.sample_count = static_cast<std::uint16_t>(get(bytes.subspan(12, 2)));
-  if (packet.sample_count == 0) {
+  if (packet.sample_count != kOpusFrameSamplesPerChannel) {
     return std::nullopt;
   }
   packet.opus.assign(bytes.begin() + kAudioHeaderBytes, bytes.end());

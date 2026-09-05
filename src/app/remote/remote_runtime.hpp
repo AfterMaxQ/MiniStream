@@ -60,8 +60,9 @@ class RemoteRuntime {
   [[nodiscard]] std::optional<DiscoveryError> last_discovery_error() const noexcept;
   void set_telemetry_callback(std::function<void(const StreamSnapshot&)> callback);
 
-  bool refresh(Microseconds timeout = Microseconds{250});
-  bool begin_discovery(Microseconds timeout = Microseconds{750});
+  bool refresh(Microseconds timeout = std::chrono::milliseconds{750});
+  bool begin_discovery(Microseconds timeout = std::chrono::milliseconds{750});
+  [[nodiscard]] const std::string& video_status() const noexcept { return video_status_; }
   bool connect(std::size_t index);
   void confirm_pairing();
   void cancel_pairing();
@@ -75,6 +76,7 @@ class RemoteRuntime {
   void reset_pairing() noexcept;
   void process_datagram(const ReceivedDatagram& incoming);
   void poll_media(const ReceivedDatagram& incoming);
+  void decode_video_frame(const EncodedFrame& frame);
   void play_audio(SteadyClock::time_point now);
   bool send_input(const DesktopInput& input);
   bool send_reliable_input(const ControlMessage& message);
@@ -99,9 +101,10 @@ class RemoteRuntime {
   std::unique_ptr<MediaReceiver> media_receiver_;
   std::unique_ptr<SessionCrypto> crypto_;
   std::unique_ptr<OpusDecoder48kStereo> audio_decoder_;
-  AudioJitterBuffer audio_jitter_;
+  AudioJitterBuffer audio_jitter_{{Microseconds{20'000}, Microseconds{60'000}}};
   std::uint32_t expected_audio_sequence_{};
   bool audio_primed_{};
+  unsigned missing_audio_frames_{};
   std::optional<SteadyClock::time_point> next_audio_playout_;
   std::optional<DeviceIdentity> identity_;
   std::optional<EphemeralKeyPair> ephemeral_;
@@ -126,6 +129,10 @@ class RemoteRuntime {
   ReliableControl reliable_input_;
   SessionId session_id_{1};
   bool codec_configured_{};
+  std::optional<CodecConfig> active_codec_config_;
+  bool awaiting_keyframe_{true};
+  std::optional<std::uint32_t> last_video_frame_id_;
+  std::string video_status_{"Waiting for video configuration"};
   std::optional<SteadyClock::time_point> last_keyframe_request_;
   std::optional<SteadyClock::time_point> last_feedback_send_;
   std::uint32_t feedback_sequence_{};

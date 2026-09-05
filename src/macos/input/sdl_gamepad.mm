@@ -28,6 +28,10 @@ SdlGamepad& SdlGamepad::operator=(SdlGamepad&&) noexcept = default;
 
 std::optional<GamepadState> SdlGamepad::poll_latest() {
   SDL_PumpEvents();
+  if (impl_->gamepad && !SDL_GamepadConnected(impl_->gamepad)) {
+    SDL_CloseGamepad(impl_->gamepad);
+    impl_->gamepad = nullptr;
+  }
   if (impl_->gamepad == nullptr) {
     int count{};
     SDL_JoystickID* ids = SDL_GetGamepads(&count);
@@ -61,16 +65,22 @@ std::optional<GamepadState> SdlGamepad::poll_latest() {
   buttons |= pressed(SDL_GAMEPAD_BUTTON_EAST) ? kGamepadB : 0U;
   buttons |= pressed(SDL_GAMEPAD_BUTTON_WEST) ? kGamepadX : 0U;
   buttons |= pressed(SDL_GAMEPAD_BUTTON_NORTH) ? kGamepadY : 0U;
+  const auto trigger = [&](SDL_GamepadAxis axis) {
+    const auto value = std::max<int>(0, SDL_GetGamepadAxis(impl_->gamepad, axis));
+    return static_cast<std::uint16_t>(value * 65535 / 32767);
+  };
+  const auto vertical = [&](SDL_GamepadAxis axis) {
+    return static_cast<std::int16_t>(std::clamp(
+        -static_cast<int>(SDL_GetGamepadAxis(impl_->gamepad, axis)), -32768, 32767));
+  };
   return GamepadState{
       buttons,
-      static_cast<std::uint16_t>(SDL_GetGamepadAxis(impl_->gamepad,
-                                                    SDL_GAMEPAD_AXIS_LEFT_TRIGGER)),
-      static_cast<std::uint16_t>(SDL_GetGamepadAxis(impl_->gamepad,
-                                                    SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)),
+      trigger(SDL_GAMEPAD_AXIS_LEFT_TRIGGER),
+      trigger(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER),
       SDL_GetGamepadAxis(impl_->gamepad, SDL_GAMEPAD_AXIS_LEFTX),
-      SDL_GetGamepadAxis(impl_->gamepad, SDL_GAMEPAD_AXIS_LEFTY),
+      vertical(SDL_GAMEPAD_AXIS_LEFTY),
       SDL_GetGamepadAxis(impl_->gamepad, SDL_GAMEPAD_AXIS_RIGHTX),
-      SDL_GetGamepadAxis(impl_->gamepad, SDL_GAMEPAD_AXIS_RIGHTY)};
+      vertical(SDL_GAMEPAD_AXIS_RIGHTY)};
 }
 
 bool SdlGamepad::rumble(std::uint16_t low, std::uint16_t high, Microseconds duration) {

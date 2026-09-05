@@ -230,7 +230,8 @@ VideoFecReassembler::PendingFrame* VideoFecReassembler::find_or_create(
     pending.parity_shards = header.parity_shards;
     pending.shard_bytes = header.shard_bytes;
     pending.frame_bytes = header.frame_bytes;
-    pending.deadline = now + config_.deadline;
+    pending.deadline = now + (header.keyframe
+        ? std::max(config_.deadline, config_.keyframe_deadline) : config_.deadline);
     pending.shards.resize(static_cast<std::size_t>(header.data_shards) + header.parity_shards);
     insertion_order_.push_back(header.frame_id);
     found = frames_.emplace(header.frame_id, std::move(pending)).first;

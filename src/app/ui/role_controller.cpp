@@ -142,6 +142,10 @@ RoleController::~RoleController() {
   if (remote_) {
     remote_->stop();
   }
+#ifdef _WIN32
+  // The adapter's destructor detaches a callback from the still-live backend.
+  video_surface_.reset();
+#endif
 #endif
 }
 
@@ -515,19 +519,12 @@ void RoleController::refreshCapabilities() {
 
 void RoleController::refresh() {
   refreshCapabilities();
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
   if (mode_ == RoleMode::Remote && remote_) {
     if (remote_->state() == RoleState::Idle) {
       (void)remote_->start();
     }
-    (void)remote_->begin_discovery(Microseconds{750});
-  }
-#elif defined(__APPLE__)
-  if (mode_ == RoleMode::Remote && remote_) {
-    if (remote_->state() == RoleState::Idle) {
-      (void)remote_->start();
-    }
-    (void)remote_->begin_discovery(Microseconds{750});
+    (void)remote_->begin_discovery();
   }
 #endif
   failure_text_.clear();
@@ -539,7 +536,7 @@ void RoleController::findDevices() {
   if (mode_ == RoleMode::Remote && remote_) {
     if (remote_->state() == RoleState::Idle && !remote_->start()) {
       failure_text_ = QStringLiteral("Remote backend is not ready.");
-    } else if (!remote_->begin_discovery(Microseconds{750}) && !searching()) {
+    } else if (!remote_->begin_discovery() && !searching()) {
       failure_text_.clear();
     } else {
       failure_text_.clear();
@@ -742,15 +739,26 @@ void RoleController::tick() {
     const auto before_discovery = remote_->discovery_state();
     const auto before_hosts = remote_->hosts().size();
     const auto before_pairing_code = remote_->pairing_code();
+    const auto before_video_status = remote_->video_status();
+    const auto before_input = remote_->remote_input_active();
     remote_->tick();
     const auto after_state = remote_->state();
     if (before_state != after_state || before_discovery != remote_->discovery_state() ||
         before_hosts != remote_->hosts().size() ||
-        before_pairing_code != remote_->pairing_code()) {
+        before_pairing_code != remote_->pairing_code() ||
+        before_video_status != remote_->video_status() ||
+        before_input != remote_->remote_input_active()) {
       emit stateChanged();
     }
   }
 #endif
+}
+
+QString RoleController::videoStatus() const {
+#if defined(_WIN32) || defined(__APPLE__)
+  if (remote_) return QString::fromStdString(remote_->video_status());
+#endif
+  return QStringLiteral("Waiting for video");
 }
 
 void RoleController::cleanupCurrentMode() {

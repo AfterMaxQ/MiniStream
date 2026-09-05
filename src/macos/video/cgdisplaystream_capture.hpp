@@ -35,7 +35,7 @@ class CGDisplayStreamCapture {
 
  private:
   struct Impl;
-  std::unique_ptr<Impl> impl_;
+  std::shared_ptr<Impl> impl_;
 };
 
 }  // namespace ministream

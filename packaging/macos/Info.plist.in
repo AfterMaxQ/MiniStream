@@ -22,7 +22,7 @@
   <key>CFBundleVersion</key>
   <string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
   <key>LSMinimumSystemVersion</key>
-  <string>12.3</string>
+  <string>15.0</string>
   <key>NSLocalNetworkUsageDescription</key>
   <string>MiniStream uses your local network to discover and connect to nearby devices for game streaming.</string>
   <key>NSScreenCaptureUsageDescription</key>

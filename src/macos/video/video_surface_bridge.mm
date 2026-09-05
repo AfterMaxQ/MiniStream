@@ -13,7 +13,7 @@ VideoSurfaceBridge::~VideoSurfaceBridge() {
 
 bool VideoSurfaceBridge::frameAvailable() const noexcept {
   std::scoped_lock lock(mutex_);
-  return latest_.pixel_buffer != nullptr;
+  return has_frame_;
 }
 
 void VideoSurfaceBridge::publish(CVPixelBufferRef pixel_buffer, std::uint64_t timestamp_us) {
@@ -25,6 +25,7 @@ void VideoSurfaceBridge::publish(CVPixelBufferRef pixel_buffer, std::uint64_t ti
       CVPixelBufferRelease(latest_.pixel_buffer);
     }
     latest_ = {pixel_buffer, timestamp_us};
+    has_frame_ = true;
   }
   emit frameAvailableChanged();
 }
@@ -41,6 +42,8 @@ void VideoSurfaceBridge::clear() noexcept {
   bool had_frame = false;
   {
     std::scoped_lock lock(mutex_);
+    had_frame = has_frame_;
+    has_frame_ = false;
     if (latest_.pixel_buffer) {
       CVPixelBufferRelease(latest_.pixel_buffer);
       latest_ = {};

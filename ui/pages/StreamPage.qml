@@ -20,14 +20,14 @@ Item {
     Keys.onPressed: function(event) {
         if (!event.isAutoRepeat) {
             root.controller.routeKey(event.key, true)
-            event.accepted = true
         }
+        event.accepted = true
     }
     Keys.onReleased: function(event) {
         if (!event.isAutoRepeat) {
             root.controller.routeKey(event.key, false)
-            event.accepted = true
         }
+        event.accepted = true
     }
 
     Rectangle {
@@ -44,39 +44,49 @@ Item {
         Text {
             anchors.centerIn: parent
             visible: !nativeVideo.frameAvailable
-            text: "Waiting for video"
+            text: root.controller.videoStatus
             color: Tokens.textMuted
             font.pixelSize: 14
         }
 
         MouseArea {
+            id: remoteMouse
             anchors.fill: parent
-            z: -1
+            z: 0
+            enabled: root.controller.remoteInputActive
+            acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
             hoverEnabled: true
+            preventStealing: true
             property real lastX: 0
             property real lastY: 0
+            onEnabledChanged: {
+                lastX = mouseX
+                lastY = mouseY
+            }
             onEntered: {
                 lastX = mouseX
                 lastY = mouseY
             }
-            onPositionChanged: {
+            onPositionChanged: function(mouse) {
                 if (root.controller.remoteInputActive) {
                     root.controller.routeMouseMove(mouseX - lastX, mouseY - lastY)
                 }
                 lastX = mouseX
                 lastY = mouseY
             }
-            onPressed: {
+            onPressed: function(mouse) {
+                root.forceActiveFocus()
                 if (root.controller.remoteInputActive) {
                     root.controller.routeMouseButton(mouse.button, true)
                 }
             }
-            onReleased: {
+            onReleased: function(mouse) {
                 if (root.controller.remoteInputActive) {
                     root.controller.routeMouseButton(mouse.button, false)
                 }
             }
-            onWheel: {
+            onCanceled: root.controller.releaseRemoteInput()
+            onWheel: function(wheel) {
                 if (root.controller.remoteInputActive) {
                     root.controller.routeMouseWheel(wheel.angleDelta.y)
                 }
@@ -85,7 +95,9 @@ Item {
 
         Column {
             z: 1
-            anchors.centerIn: parent
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: Tokens.space16
             width: Math.min(parent.width - Tokens.space32 * 2, 620)
             spacing: Tokens.space12
 

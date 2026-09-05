@@ -25,6 +25,10 @@ struct WindowsControlledBackend::Impl {
   std::uint32_t bitrate_bps{20'000'000};
   bool started{};
   bool configured{};
+  std::optional<CapturedFrame> last_capture;
+  bool keyframe_pending{true};
+  std::uint32_t next_video_id{};
+  std::optional<SteadyClock::time_point> next_capture_at;
   bool codec_support_probed{};
   bool h264_supported{};
   bool hevc_supported{};
@@ -115,6 +119,9 @@ bool WindowsControlledBackend::start() {
   impl_->active = {};
   impl_->bitrate_bps = 20'000'000;
   impl_->configured = false;
+  impl_->last_capture.reset();
+  impl_->next_capture_at.reset();
+  impl_->next_video_id = 0;
   impl_->started = true;
   return true;
 }
@@ -134,6 +141,8 @@ void WindowsControlledBackend::stop() noexcept {
   }
   impl_->gamepad.reset();
   impl_->encoder.reset();
+  impl_->last_capture.reset();
+  impl_->next_capture_at.reset();
   impl_->audio.reset();
   impl_->capture.reset();
   impl_->input.reset();
@@ -145,6 +154,7 @@ void WindowsControlledBackend::stop() noexcept {
   impl_->h264_supported = false;
   impl_->hevc_supported = false;
   impl_->started = false;
+  impl_->keyframe_pending = true;
 }
 
 bool WindowsControlledBackend::configure_video(const CodecConfig& config) {
@@ -156,6 +166,9 @@ bool WindowsControlledBackend::configure_video(const CodecConfig& config) {
     return false;
   }
   impl_->encoder->stop();
+  impl_->next_capture_at.reset();
+  impl_->next_video_id = 0;
+  impl_->keyframe_pending = true;
   const NvencConfig encoder_config{config.codec, config.width, config.height,
                                    config.fps, impl_->bitrate_bps, false};
   if (!impl_->encoder->initialize(impl_->capture->device(), impl_->capture->context(),
@@ -187,6 +200,7 @@ bool WindowsControlledBackend::reconfigure_bitrate(std::uint32_t bitrate_bps) {
 }
 
 void WindowsControlledBackend::request_keyframe() noexcept {
+  impl_->keyframe_pending = true;
   if (impl_->encoder) {
     impl_->encoder->request_idr();
   }
@@ -196,11 +210,24 @@ std::optional<EncodedFrame> WindowsControlledBackend::next_video() {
   if (!impl_->started || !impl_->capture || !impl_->encoder) {
     return std::nullopt;
   }
+  const auto now = SteadyClock::now();
+  if (impl_->next_capture_at && now < *impl_->next_capture_at) return std::nullopt;
+  const auto fps = impl_->configured ? impl_->requested.fps : 60U;
+  const auto interval = Microseconds{1'000'000 / std::max(1U, fps)};
+  impl_->next_capture_at = impl_->next_capture_at.value_or(now) + interval;
+  if (*impl_->next_capture_at <= now) impl_->next_capture_at = now + interval;
   const auto captured = impl_->capture->acquire(Microseconds{0});
-  if (!captured) {
+  if (!captured && captured.error() == CaptureError::AccessLost) {
+    impl_->last_capture.reset();
+    request_keyframe();
     return std::nullopt;
   }
-  auto frame = *captured;
+  if (captured) impl_->last_capture = *captured;
+  // Desktop Duplication produces no new frame when the desktop is static.
+  // A recovery IDR must still be able to encode the last captured desktop.
+  if ((!captured && !impl_->keyframe_pending) || !impl_->last_capture) return std::nullopt;
+  auto frame = *impl_->last_capture;
+  if (!captured) frame.captured_at = now;
   const auto target_width = impl_->configured ? impl_->requested.width : frame.width;
   const auto target_height = impl_->configured ? impl_->requested.height : frame.height;
   if (frame.format != DXGI_FORMAT_B8G8R8A8_UNORM || frame.width != target_width ||
@@ -233,10 +260,15 @@ std::optional<EncodedFrame> WindowsControlledBackend::next_video() {
       .count());
   const auto encoded = impl_->encoder->encode(frame, timestamp);
   if (!encoded) {
+    impl_->keyframe_pending = true;
+    impl_->encoder->request_idr();
     return std::nullopt;
   }
+  auto result = *encoded;
+  result.frame_id = impl_->next_video_id++;
+  impl_->keyframe_pending = false;
   impl_->active = impl_->encoder->codec_config();
-  return *encoded;
+  return result;
 }
 
 CodecConfig WindowsControlledBackend::codec_config() const {

@@ -1,5 +1,11 @@
 /build/
 /build-*/
+/out/
+/CMakeUserPresets.json
+/*.log
+/*.dmg
+/*.app/
+/*.sha256
 /_CPack_Packages/
 /.cache/
 /.vs/

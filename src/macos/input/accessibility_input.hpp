@@ -25,6 +25,9 @@ class AccessibilityInput {
  private:
   std::set<DesktopKey> pressed_keys_;
   std::set<DesktopMouseButton> pressed_buttons_;
+  std::int64_t wheel_remainder_{};
+  bool caps_lock_{};
+  bool modifiers_initialized_{};
 };
 
 }  // namespace ministream

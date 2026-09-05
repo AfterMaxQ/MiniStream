@@ -78,7 +78,14 @@ void WindowsRemoteBackend::stop() noexcept {
 }
 
 bool WindowsRemoteBackend::configure_video(const CodecConfig& config) {
-  return impl_->started && impl_->decoder && impl_->decoder->configure(config);
+  return impl_->started && impl_->decoder && impl_->decoder->start() &&
+         impl_->decoder->configure(config);
+}
+
+void WindowsRemoteBackend::reset_video() noexcept {
+  if (impl_->decoder) impl_->decoder->stop();
+  if (impl_->surface) impl_->surface->clear();
+  if (impl_->surface_notifier) impl_->surface_notifier();
 }
 
 bool WindowsRemoteBackend::decode_video(std::span<const std::byte> encoded,

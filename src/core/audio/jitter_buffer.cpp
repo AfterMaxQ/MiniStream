@@ -7,18 +7,24 @@ namespace ministream {
 AudioJitterBuffer::AudioJitterBuffer(AudioJitterConfig config) : config_(config) {}
 
 void AudioJitterBuffer::push(AudioPacket packet) {
-  if (packets_.contains(packet.sequence) || packet.sample_count == 0) {
+  if (packets_.contains(packet.sequence) || packet.sample_count == 0 ||
+      (last_played_ && !sequence_is_newer(packet.sequence, *last_played_))) {
     return;
   }
   buffered_samples_ += packet.sample_count;
   arrival_order_.push_back(packet.sequence);
   packets_.emplace(packet.sequence, std::move(packet));
   while (buffered_duration() > config_.max && !arrival_order_.empty()) {
-    erase(arrival_order_.front());
+    erase(*first_sequence());
   }
 }
 
 AudioPlayoutResult AudioJitterBuffer::pop(std::uint32_t expected_sequence) {
+  last_played_ = expected_sequence;
+  while (const auto first = first_sequence()) {
+    if (!sequence_is_newer(expected_sequence, *first)) break;
+    erase(*first);
+  }
   const auto found = packets_.find(expected_sequence);
   if (found == packets_.end()) {
     return {AudioPlayoutKind::Plc, std::nullopt};
@@ -30,6 +36,14 @@ AudioPlayoutResult AudioJitterBuffer::pop(std::uint32_t expected_sequence) {
 
 bool AudioJitterBuffer::ready_for_playout() const noexcept {
   return buffered_duration() >= config_.target;
+}
+
+std::optional<std::uint32_t> AudioJitterBuffer::first_sequence() const noexcept {
+  std::optional<std::uint32_t> first;
+  for (const auto sequence : arrival_order_) {
+    if (!first || sequence_is_newer(*first, sequence)) first = sequence;
+  }
+  return first;
 }
 
 Microseconds AudioJitterBuffer::buffered_duration() const {

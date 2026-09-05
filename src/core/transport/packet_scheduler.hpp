@@ -43,6 +43,10 @@ class PacketScheduler {
   [[nodiscard]] Microseconds estimated_video_queue_delay() const;
   [[nodiscard]] std::uint64_t video_rate_bps() const noexcept;
   void set_video_rate(std::uint64_t bits_per_second);
+  [[nodiscard]] std::size_t remaining_capacity(Priority priority) const noexcept {
+    const auto index = static_cast<std::size_t>(priority);
+    return kQueueLimits[index] - queues_[index].size();
+  }
 
  private:
   struct QueuedDatagram {
@@ -56,7 +60,7 @@ class PacketScheduler {
   void commit_ready(std::size_t index, std::size_t bytes);
   [[nodiscard]] double max_video_tokens_bits() const noexcept;
 
-  static constexpr std::array<std::size_t, 5> kQueueLimits{64, 64, 128, 512, 64};
+  static constexpr std::array<std::size_t, 5> kQueueLimits{64, 64, 128, 2048, 64};
   std::array<std::deque<QueuedDatagram>, 5> queues_;
   std::uint64_t video_rate_bps_{20'000'000};
   double video_tokens_bits_{};

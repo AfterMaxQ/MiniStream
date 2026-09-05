@@ -25,6 +25,27 @@ std::optional<DesktopKey> desktop_key_from_qt(std::uint32_t key) noexcept {
     return DesktopKey::Digit0;
   }
   switch (key) {
+    case '!': return DesktopKey::Digit1;
+    case '@': return DesktopKey::Digit2;
+    case '#': return DesktopKey::Digit3;
+    case '$': return DesktopKey::Digit4;
+    case '%': return DesktopKey::Digit5;
+    case '^': return DesktopKey::Digit6;
+    case '&': return DesktopKey::Digit7;
+    case '*': return DesktopKey::Digit8;
+    case '(': return DesktopKey::Digit9;
+    case ')': return DesktopKey::Digit0;
+    case '_': return DesktopKey::Minus;
+    case '+': return DesktopKey::Equal;
+    case '{': return DesktopKey::LeftBracket;
+    case '}': return DesktopKey::RightBracket;
+    case '|': return DesktopKey::Backslash;
+    case ':': return DesktopKey::Semicolon;
+    case '"': return DesktopKey::Apostrophe;
+    case '~': return DesktopKey::Grave;
+    case '<': return DesktopKey::Comma;
+    case '>': return DesktopKey::Period;
+    case '?': return DesktopKey::Slash;
     case ' ': return DesktopKey::Space;
     case '-': return DesktopKey::Minus;
     case '=': return DesktopKey::Equal;
@@ -39,6 +60,7 @@ std::optional<DesktopKey> desktop_key_from_qt(std::uint32_t key) noexcept {
     case '/': return DesktopKey::Slash;
     case 0x01000000U: return DesktopKey::Escape;
     case 0x01000001U: return DesktopKey::Tab;
+    case 0x01000002U: return DesktopKey::Tab;  // Shift+Tab (Backtab)
     case 0x01000003U: return DesktopKey::Backspace;
     case 0x01000004U:
     case 0x01000005U: return DesktopKey::Enter;

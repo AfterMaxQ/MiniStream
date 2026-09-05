@@ -6,6 +6,17 @@ Item {
     id: root
     required property var controller
 
+    Timer {
+        interval: 3000
+        repeat: true
+        triggeredOnStart: true
+        running: root.visible && !root.controller.connecting
+                 && !root.controller.connected && !root.controller.pairing
+        onTriggered: {
+            if (!root.controller.searching) root.controller.findDevices()
+        }
+    }
+
     Column {
         width: Math.min(parent.width - Tokens.space32 * 2, 620)
         anchors.centerIn: parent
@@ -40,7 +51,7 @@ Item {
             elide: Text.ElideRight
         }
 
-        SectionHeader { text: "Nearby devices" }
+        SectionHeader { text: "Nearby devices · refreshes automatically" }
 
         Rectangle {
             width: parent.width

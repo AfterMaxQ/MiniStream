@@ -20,6 +20,7 @@ class RemoteBackend {
   virtual bool start() = 0;
   virtual void stop() noexcept = 0;
   virtual bool configure_video(const CodecConfig& config) = 0;
+  virtual void reset_video() noexcept {}
   virtual bool decode_video(std::span<const std::byte> encoded,
                             std::uint64_t timestamp_us) = 0;
   virtual bool play_audio(std::span<const float> interleaved_stereo) = 0;

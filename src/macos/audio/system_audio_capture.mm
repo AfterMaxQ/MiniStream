@@ -26,8 +26,9 @@ struct SystemAudioCapture::Impl {
   std::deque<PcmBlock> blocks;
   static constexpr std::size_t kMaxBlocks = 16;
   std::atomic_bool started{};
+  std::atomic<std::uint64_t> generation{};
 
-  void append(CMSampleBufferRef sample_buffer);
+  void append(CMSampleBufferRef sample_buffer, std::uint64_t source_generation);
 };
 
 namespace {
@@ -140,17 +141,19 @@ bool convert_sample_buffer(CMSampleBufferRef sample_buffer, PcmBlock& result) {
 }  // namespace ministream
 
 @interface MiniStreamSystemAudioOutput : NSObject <SCStreamOutput, SCStreamDelegate>
-- (instancetype)initWithImpl:(ministream::SystemAudioCapture::Impl*)impl;
+- (instancetype)initWithImpl:(std::weak_ptr<ministream::SystemAudioCapture::Impl>)impl;
 @end
 
 @implementation MiniStreamSystemAudioOutput {
-  ministream::SystemAudioCapture::Impl* _impl;
+  std::weak_ptr<ministream::SystemAudioCapture::Impl> _impl;
+  std::uint64_t _generation;
 }
 
-- (instancetype)initWithImpl:(ministream::SystemAudioCapture::Impl*)impl {
+- (instancetype)initWithImpl:(std::weak_ptr<ministream::SystemAudioCapture::Impl>)impl {
   self = [super init];
   if (self) {
     _impl = impl;
+    if (const auto state = impl.lock()) _generation = state->generation.load();
   }
   return self;
 }
@@ -159,35 +162,37 @@ bool convert_sample_buffer(CMSampleBufferRef sample_buffer, PcmBlock& result) {
     didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
                   ofType:(SCStreamOutputType)type {
   (void)stream;
-  if (type == SCStreamOutputTypeAudio && _impl) {
-    _impl->append(sampleBuffer);
+  if (const auto state = _impl.lock(); type == SCStreamOutputTypeAudio && state) {
+    state->append(sampleBuffer, _generation);
   }
 }
 
 - (void)stream:(SCStream*)stream didStopWithError:(NSError*)error {
   (void)stream;
   (void)error;
-  if (_impl) {
-    _impl->started.store(false, std::memory_order_release);
+  if (const auto state = _impl.lock()) {
+    std::scoped_lock lock(state->mutex);
+    if (state->generation.load() == _generation) state->started.store(false, std::memory_order_release);
   }
 }
 @end
 
 namespace ministream {
 
-void SystemAudioCapture::Impl::append(CMSampleBufferRef sample_buffer) {
+void SystemAudioCapture::Impl::append(CMSampleBufferRef sample_buffer, std::uint64_t source_generation) {
   PcmBlock block;
   if (!convert_sample_buffer(sample_buffer, block)) {
     return;
   }
   std::scoped_lock lock(mutex);
+  if (generation.load() != source_generation) return;
   if (blocks.size() == kMaxBlocks) {
     blocks.pop_front();
   }
   blocks.push_back(std::move(block));
 }
 
-SystemAudioCapture::SystemAudioCapture() : impl_(std::make_unique<Impl>()) {}
+SystemAudioCapture::SystemAudioCapture() : impl_(std::make_shared<Impl>()) {}
 SystemAudioCapture::~SystemAudioCapture() { stop(); }
 SystemAudioCapture::SystemAudioCapture(SystemAudioCapture&&) noexcept = default;
 SystemAudioCapture& SystemAudioCapture::operator=(SystemAudioCapture&&) noexcept = default;
@@ -250,7 +255,7 @@ Result<void, SystemAudioCaptureError> SystemAudioCapture::start() {
   configuration.channelCount = kOutputChannels;
   impl_->queue = dispatch_queue_create("com.aftermaxq.ministream.system-audio",
                                        DISPATCH_QUEUE_SERIAL);
-  auto* output = [[MiniStreamSystemAudioOutput alloc] initWithImpl:impl_.get()];
+  auto* output = [[MiniStreamSystemAudioOutput alloc] initWithImpl:impl_];
   NSError* error = nil;
   impl_->stream = [[SCStream alloc] initWithFilter:filter configuration:configuration delegate:output];
   const auto added = impl_->stream &&
@@ -311,6 +316,11 @@ Result<PcmBlock, SystemAudioCaptureError> SystemAudioCapture::read() {
 void SystemAudioCapture::stop() noexcept {
   if (!impl_) {
     return;
+  }
+  {
+    std::scoped_lock lock(impl_->mutex);
+    ++impl_->generation;
+    impl_->started.store(false, std::memory_order_release);
   }
   if (impl_->stream) {
     dispatch_semaphore_t done = dispatch_semaphore_create(0);

@@ -38,7 +38,8 @@ class ReplayWindow {
 
  private:
   std::optional<std::uint64_t> highest_;
-  std::bitset<1024> seen_;
+  // Control/audio can overtake the bounded 2048-packet video queue.
+  std::bitset<4096> seen_;
 };
 
 }  // namespace ministream

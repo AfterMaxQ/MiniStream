@@ -84,15 +84,25 @@ bool MacRemoteBackend::configure_video(const CodecConfig& config) {
   return impl_->started && impl_->decoder && impl_->decoder->initialize(config);
 }
 
+void MacRemoteBackend::reset_video() noexcept {
+  if (impl_->decoder) impl_->decoder->stop();
+  if (impl_->surface) impl_->surface->clear();
+}
+
 bool MacRemoteBackend::decode_video(std::span<const std::byte> encoded,
                                     std::uint64_t timestamp_us) {
   if (!impl_->started || !impl_->decoder || !impl_->surface) return false;
   if (!impl_->decoder->decode(encoded, timestamp_us)) return false;
+  tick(SteadyClock::now());
+  return true;
+}
+
+void MacRemoteBackend::tick(SteadyClock::time_point) noexcept {
+  if (!impl_->started || !impl_->decoder || !impl_->surface) return;
   if (const auto frame = impl_->decoder->take_latest(); frame) {
     impl_->surface->publish(frame->pixel_buffer, frame->timestamp_us);
     CVPixelBufferRelease(frame->pixel_buffer);
   }
-  return true;
 }
 
 bool MacRemoteBackend::play_audio(std::span<const float> samples) {

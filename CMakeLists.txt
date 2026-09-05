@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.30)
 
-project(MiniStream VERSION 0.2.4 LANGUAGES C CXX)
+project(MiniStream VERSION 0.2.5 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,6 +10,11 @@ option(MINISTREAM_BUILD_TESTS "Build MiniStream tests" ON)
 option(MINISTREAM_BUILD_TOOLS "Build MiniStream diagnostic tools" ON)
 option(MINISTREAM_BUILD_UI "Build the Qt Quick desktop UI" OFF)
 option(MINISTREAM_ENABLE_PACKAGING "Configure native installer packaging" OFF)
+
+if(APPLE)
+  # Configure Objective-C++ before SDL/dependency checks, also with Ninja/CLT.
+  enable_language(OBJCXX)
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(Warnings)
@@ -26,7 +31,6 @@ add_subdirectory(src/app)
 if(WIN32)
   add_subdirectory(src/windows)
 elseif(APPLE)
-  enable_language(OBJCXX)
   add_subdirectory(src/macos)
 endif()
 

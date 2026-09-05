@@ -88,6 +88,7 @@ class ControlledRuntime {
   std::unique_ptr<MediaSender> media_sender_;
   std::unique_ptr<OpusEncoder48kStereo> audio_encoder_;
   std::vector<float> audio_pending_;
+  std::optional<std::uint64_t> audio_pending_timestamp_us_;
   std::mutex rumble_mutex_;
   std::deque<RumblePacket> rumble_pending_;
   std::uint32_t audio_sequence_{};
@@ -117,6 +118,7 @@ class ControlledRuntime {
   double current_fec_ratio_{0.03};
   std::optional<CodecConfig> last_codec_config_sent_;
   std::optional<SteadyClock::time_point> last_codec_config_send_;
+  std::optional<SteadyClock::time_point> last_gamepad_receive_;
   std::optional<std::uint32_t> last_feedback_sequence_;
   std::optional<FeedbackReport> last_feedback_report_;
   std::unique_ptr<RateController> rate_controller_;
