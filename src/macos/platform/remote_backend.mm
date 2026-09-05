@@ -44,7 +44,7 @@ RemoteCapabilities MacRemoteBackend::inspect() const {
           {network.has_value(), network ? "UDP available" : "UDP socket unavailable"},
           h264,
           hevc,
-          false,
+          hevc,
           video_ready ? 3840U : 0U,
           video_ready ? 2160U : 0U,
           video_ready ? 60U : 0U};

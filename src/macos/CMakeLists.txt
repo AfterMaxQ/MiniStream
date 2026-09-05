@@ -24,12 +24,15 @@ target_link_libraries(
   PRIVATE "-framework Foundation" "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo"
           "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation"
           "-framework CoreGraphics" "-framework ApplicationServices" "-framework IOSurface"
-          "-framework ScreenCaptureKit"
+          "-framework ScreenCaptureKit" "-framework AppKit"
 )
 set_target_properties(ministream_macos_platform PROPERTIES AUTOMOC ON)
 ministream_set_warnings(ministream_macos_platform)
 
 if(MINISTREAM_BUILD_UI)
+  find_package(Qt6 ${MINISTREAM_QT_VERSION} REQUIRED COMPONENTS GuiPrivate)
+  set_source_files_properties("${PROJECT_SOURCE_DIR}/src/app/ui/relative_mouse_capture.cpp"
+    PROPERTIES LANGUAGE OBJCXX)
   set_source_files_properties(
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.mm"
     PROPERTIES COMPILE_OPTIONS "-fobjc-arc"
@@ -42,6 +45,8 @@ if(MINISTREAM_BUILD_UI)
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.hpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.mm"
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.hpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/relative_mouse_capture.cpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/relative_mouse_capture.hpp"
     "${PROJECT_SOURCE_DIR}/assets/icons/ministream.icns"
   )
   set_source_files_properties(
@@ -50,8 +55,8 @@ if(MINISTREAM_BUILD_UI)
   )
   target_link_libraries(
     ministream
-    PRIVATE ministream_app ministream_macos_platform Qt6::Quick Qt6::Qml Qt6::QuickControls2
-            "-framework CoreImage" "-framework Metal"
+    PRIVATE ministream_app ministream_macos_platform Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::GuiPrivate
+            "-framework CoreImage" "-framework Metal" "-framework AppKit"
   )
   ministream_add_qml_ui(ministream)
 endif()

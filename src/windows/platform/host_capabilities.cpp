@@ -4,7 +4,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
-#include <dxgi.h>
+#include <dxgi1_6.h>
 #include <mmdeviceapi.h>
 #include <wrl/client.h>
 
@@ -130,6 +130,16 @@ std::pair<std::uint32_t, std::uint32_t> inspect_capture_size() {
 HostCapabilities inspect_host_capabilities() {
   const auto video = inspect_nvenc();
   const auto [max_width, max_height] = inspect_capture_size();
+  bool hdr = false;
+  ComPtr<IDXGIFactory1> factory;
+  ComPtr<IDXGIAdapter1> adapter;
+  ComPtr<IDXGIOutput> output;
+  ComPtr<IDXGIOutput6> output6;
+  DXGI_OUTPUT_DESC1 display{};
+  if (SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))) &&
+      SUCCEEDED(factory->EnumAdapters1(0, &adapter)) && SUCCEEDED(adapter->EnumOutputs(0, &output)) &&
+      SUCCEEDED(output.As(&output6)) && SUCCEEDED(output6->GetDesc1(&display)))
+    hdr = display.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
   const auto capture_video = video.ready && max_width != 0 && max_height != 0
                                  ? video
                                  : CapabilityStatus{false, video.ready
@@ -142,7 +152,7 @@ HostCapabilities inspect_host_capabilities() {
           inspect_network(),
           capture_video.ready,
           capture_video.ready,
-          false,
+          hdr,
           capture_video.ready ? max_width : 0U,
           capture_video.ready ? max_height : 0U,
           capture_video.ready ? 60U : 0U};

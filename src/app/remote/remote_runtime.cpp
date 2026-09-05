@@ -38,7 +38,14 @@ RemoteRuntime::RemoteRuntime(std::unique_ptr<RemoteBackend> backend,
 RemoteRuntime::~RemoteRuntime() { stop(); }
 
 RemoteCapabilities RemoteRuntime::inspect() const {
-  return backend_ ? backend_->inspect() : RemoteCapabilities{};
+  auto capabilities = backend_ ? backend_->inspect() : RemoteCapabilities{};
+  capabilities.hdr10 = capabilities.hdr10 && hdr_output_enabled_;
+  return capabilities;
+}
+
+void RemoteRuntime::set_hdr_output(bool enabled) {
+  hdr_output_enabled_ = enabled;
+  if (!enabled && hello_ && hello_->hdr10) disconnect_session();
 }
 
 bool RemoteRuntime::start() {

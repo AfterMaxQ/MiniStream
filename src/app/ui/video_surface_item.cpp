@@ -1,4 +1,5 @@
 #include "app/ui/video_surface_item.hpp"
+#include "app/ui/native_video_texture.hpp"
 #include "app/ui/windows_video_surface_bridge.hpp"
 
 #include <QSGRendererInterface>
@@ -43,6 +44,9 @@ struct D3DVideoNode final : QSGSimpleTextureNode {
     shared->GetDesc(&description);
     description.MiscFlags = 0;
     description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    const bool linear = description.Format == DXGI_FORMAT_R16G16B16A16_FLOAT;
+    const bool srgb = !linear && hdr_output(window);
+    if (srgb) description.Format = DXGI_FORMAT_R8G8B8A8_TYPELESS;
     ComPtr<ID3D11Texture2D> target;
     if (FAILED(device->CreateTexture2D(&description, nullptr, &target))) return false;
     if (gate->AcquireSync(1, 5) != S_OK) return false;
@@ -53,8 +57,10 @@ struct D3DVideoNode final : QSGSimpleTextureNode {
     // The published texture is immutable; leave it readable after a scene
     // graph rebuild, which can import the same last frame again.
     if (FAILED(gate->ReleaseSync(1))) return false;
-    std::unique_ptr<QSGTexture> wrapper(QNativeInterface::QSGD3D11Texture::fromNative(
-        target.Get(), window, size));
+    auto wrapper = NativeVideoTexture::create(window,
+        reinterpret_cast<quint64>(target.Get()), size,
+        linear ? QRhiTexture::RGBA16F : QRhiTexture::RGBA8,
+        srgb ? QRhiTexture::sRGB : QRhiTexture::Flags{});
     if (!wrapper) return false;
     setTexture(wrapper.get());
     texture_owner = std::move(wrapper);
@@ -67,6 +73,14 @@ struct D3DVideoNode final : QSGSimpleTextureNode {
 VideoSurfaceItem::VideoSurfaceItem(QQuickItem* parent)
     : QQuickItem(parent), impl_(std::make_unique<Impl>()) {
   setFlag(ItemHasContents, true);
+  connect(this, &QQuickItem::windowChanged, this, [this](QQuickWindow* win) {
+    if (!win) return;
+    connect(win, &QQuickWindow::beforeRendering, this, [this, win] {
+      const bool hdr = hdr_output(win);
+      if (hdr_output_.exchange(hdr) != hdr)
+        QMetaObject::invokeMethod(this, [this] { emit hdrOutputChanged(); update(); }, Qt::QueuedConnection);
+    }, Qt::DirectConnection);
+  });
 }
 VideoSurfaceItem::~VideoSurfaceItem() = default;
 QObject* VideoSurfaceItem::bridge() const noexcept { return bridge_.data(); }
@@ -120,7 +134,9 @@ QSGNode* VideoSurfaceItem::updatePaintNode(QSGNode* old_node, UpdatePaintNodeDat
   if (!node) { node = new D3DVideoNode(); changed = true; }
   if (changed && node->present(window(), impl_->current.Get(),
       QSize(static_cast<int>(impl_->width), static_cast<int>(impl_->height)))) {
-    if (!frame_available_.exchange(true, std::memory_order_acq_rel)) {
+    const auto ratio = static_cast<double>(impl_->width) / impl_->height;
+    const bool resized = aspect_ratio_.exchange(ratio) != ratio;
+    if (!frame_available_.exchange(true, std::memory_order_acq_rel) || resized) {
       QMetaObject::invokeMethod(this, [this] { emit frameAvailableChanged(); }, Qt::QueuedConnection);
     }
   }

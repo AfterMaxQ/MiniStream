@@ -33,6 +33,7 @@ target_link_libraries(
 ministream_set_warnings(ministream_windows_platform)
 
 if(MINISTREAM_BUILD_UI)
+  find_package(Qt6 ${MINISTREAM_QT_VERSION} REQUIRED COMPONENTS GuiPrivate)
   qt_add_executable(
     ministream
     WIN32
@@ -41,13 +42,15 @@ if(MINISTREAM_BUILD_UI)
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.hpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.hpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/relative_mouse_capture.cpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/relative_mouse_capture.hpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/windows_video_surface_bridge.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/windows_video_surface_bridge.hpp"
     "${PROJECT_SOURCE_DIR}/assets/icons/ministream.rc"
   )
   target_link_libraries(
     ministream
-    PRIVATE ministream_app ministream_windows_platform Qt6::Quick Qt6::Qml Qt6::QuickControls2
+    PRIVATE ministream_app ministream_windows_platform Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::GuiPrivate
   )
   ministream_add_qml_ui(ministream)
 endif()

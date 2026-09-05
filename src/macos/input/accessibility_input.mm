@@ -124,12 +124,18 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
       type = kCGEventOtherMouseDragged;
       button = kCGMouseButtonCenter;
     }
-    event = CGEventCreateMouseEvent(nullptr, type,
-                                    CGPointMake(location.x + input.x, location.y + input.y),
-                                    button);
+    auto destination = CGPointMake(location.x + input.x, location.y + input.y);
+    if (input.flags & kDesktopMouseAbsolute) {
+      const auto bounds = CGDisplayBounds(CGMainDisplayID());
+      destination = CGPointMake(bounds.origin.x + input.x * (bounds.size.width - 1) / 65535.0,
+                                bounds.origin.y + input.y * (bounds.size.height - 1) / 65535.0);
+    }
+    event = CGEventCreateMouseEvent(nullptr, type, destination, button);
     if (event) {
-      CGEventSetIntegerValueField(event, kCGMouseEventDeltaX, input.x);
-      CGEventSetIntegerValueField(event, kCGMouseEventDeltaY, input.y);
+      CGEventSetIntegerValueField(event, kCGMouseEventDeltaX,
+                                 static_cast<int64_t>(destination.x - location.x));
+      CGEventSetIntegerValueField(event, kCGMouseEventDeltaY,
+                                 static_cast<int64_t>(destination.y - location.y));
     }
   } else if (input.kind == DesktopInputKind::MouseButton) {
     auto current = CGEventCreate(nullptr);

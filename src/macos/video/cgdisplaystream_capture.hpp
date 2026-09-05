@@ -29,7 +29,7 @@ class CGDisplayStreamCapture {
   CGDisplayStreamCapture& operator=(const CGDisplayStreamCapture&) = delete;
 
   Result<void, DisplayCaptureError> start(std::uint32_t width = 0,
-                                          std::uint32_t height = 0);
+                                          std::uint32_t height = 0, bool hdr10 = false);
   std::optional<CapturedDisplayFrame> take_latest();
   void stop() noexcept;
 

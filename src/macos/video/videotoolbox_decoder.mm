@@ -78,6 +78,14 @@ void output_callback(void* refcon, void*, OSStatus status, VTDecodeInfoFlags,
   std::scoped_lock lock(impl->mutex);
   impl->last_output_status = status;
   if (status != noErr || image == nullptr) return;
+  if (impl->config.hdr10) {
+    CVBufferSetAttachment(image, kCVImageBufferColorPrimariesKey,
+        kCVImageBufferColorPrimaries_ITU_R_2020, kCVAttachmentMode_ShouldPropagate);
+    CVBufferSetAttachment(image, kCVImageBufferTransferFunctionKey,
+        kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ, kCVAttachmentMode_ShouldPropagate);
+    CVBufferSetAttachment(image, kCVImageBufferYCbCrMatrixKey,
+        kCVImageBufferYCbCrMatrix_ITU_R_2020, kCVAttachmentMode_ShouldPropagate);
+  }
   if (impl->latest != nullptr) {
     CVPixelBufferRelease(impl->latest);
   }

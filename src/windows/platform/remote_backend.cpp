@@ -39,7 +39,7 @@ RemoteCapabilities WindowsRemoteBackend::inspect() const {
           {network.ready, network.detail},
           h264,
           hevc,
-          false,
+          hevc,
           (h264 || hevc) ? 3840U : 0U,
           (h264 || hevc) ? 2160U : 0U,
           (h264 || hevc) ? 60U : 0U};

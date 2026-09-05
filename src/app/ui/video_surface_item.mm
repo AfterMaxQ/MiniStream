@@ -1,4 +1,5 @@
 #include "app/ui/video_surface_item.hpp"
+#include "app/ui/native_video_texture.hpp"
 #include "macos/video/video_surface_bridge.hpp"
 
 #import <CoreImage/CoreImage.h>
@@ -37,15 +38,18 @@ struct MetalVideoNode final : QSGSimpleTextureNode {
       device = (__bridge id<MTLDevice>)renderer->getResource(
           window, QSGRendererInterface::DeviceResource);
       if (!device) return false;
-      queue = [device newCommandQueue];
-      context = [CIContext contextWithMTLDevice:device options:nil];
+      queue = (__bridge id<MTLCommandQueue>)renderer->getResource(
+          window, QSGRendererInterface::CommandQueueResource);
+      context = [CIContext contextWithMTLDevice:device
+          options:@{kCIContextCacheIntermediates: @NO}];
     }
     if (!queue || !context) return false;
     const auto width = CVPixelBufferGetWidth(buffer);
     const auto height = CVPixelBufferGetHeight(buffer);
     if (width == 0 || height == 0) return false;
+    const bool hdr = hdr_output(window);
     auto* descriptor = [MTLTextureDescriptor
-        texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+        texture2DDescriptorWithPixelFormat:(hdr ? MTLPixelFormatRGBA16Float : MTLPixelFormatRGBA8Unorm)
         width:width height:height mipmapped:NO];
     descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
     descriptor.storageMode = MTLStorageModePrivate;
@@ -53,15 +57,24 @@ struct MetalVideoNode final : QSGSimpleTextureNode {
     CIImage* image = [CIImage imageWithCVPixelBuffer:buffer options:nil];
     id<MTLCommandBuffer> commands = [queue commandBuffer];
     if (!target || !image || !commands) return false;
-    CGColorSpaceRef colors = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGColorSpaceRef colors = CGColorSpaceCreateWithName(
+        hdr ? kCGColorSpaceExtendedLinearSRGB : kCGColorSpaceSRGB);
     [context render:image toMTLTexture:target commandBuffer:commands
              bounds:CGRectMake(0, 0, width, height) colorSpace:colors];
     if (colors) CGColorSpaceRelease(colors);
+    // Use Qt's queue: conversion is submitted before Qt samples this texture,
+    // without blocking the render thread on a separate GPU queue every frame.
+    CVPixelBufferRetain(buffer);
+    [commands addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+      if (completed.status == MTLCommandBufferStatusError)
+        NSLog(@"MiniStream video conversion failed: %@", completed.error);
+      CVPixelBufferRelease(buffer);
+    }];
     [commands commit];
-    [commands waitUntilCompleted];
-    if (commands.status == MTLCommandBufferStatusError) return false;
-    std::unique_ptr<QSGTexture> wrapper(QNativeInterface::QSGMetalTexture::fromNative(
-        target, window, QSize(static_cast<int>(width), static_cast<int>(height))));
+    auto wrapper = NativeVideoTexture::create(window,
+        reinterpret_cast<quint64>((__bridge void*)target),
+        QSize(static_cast<int>(width), static_cast<int>(height)),
+        hdr ? QRhiTexture::RGBA16F : QRhiTexture::RGBA8);
     if (!wrapper) return false;
     setTexture(wrapper.get());
     texture_owner = std::move(wrapper);
@@ -75,6 +88,14 @@ struct MetalVideoNode final : QSGSimpleTextureNode {
 VideoSurfaceItem::VideoSurfaceItem(QQuickItem* parent)
     : QQuickItem(parent), impl_(std::make_unique<Impl>()) {
   setFlag(ItemHasContents, true);
+  connect(this, &QQuickItem::windowChanged, this, [this](QQuickWindow* win) {
+    if (!win) return;
+    connect(win, &QQuickWindow::beforeRendering, this, [this, win] {
+      const bool hdr = hdr_output(win);
+      if (hdr_output_.exchange(hdr) != hdr)
+        QMetaObject::invokeMethod(this, [this] { emit hdrOutputChanged(); update(); }, Qt::QueuedConnection);
+    }, Qt::DirectConnection);
+  });
 }
 VideoSurfaceItem::~VideoSurfaceItem() = default;
 QObject* VideoSurfaceItem::bridge() const noexcept { return bridge_.data(); }
@@ -127,7 +148,10 @@ QSGNode* VideoSurfaceItem::updatePaintNode(QSGNode* old_node, UpdatePaintNodeDat
   if (!impl_->current || !window()) return node;
   if (!node) { node = new MetalVideoNode(); changed = true; }
   if (changed && node->present(window(), impl_->current)) {
-    if (!frame_available_.exchange(true, std::memory_order_acq_rel)) {
+    const auto ratio = static_cast<double>(CVPixelBufferGetWidth(impl_->current)) /
+                       static_cast<double>(CVPixelBufferGetHeight(impl_->current));
+    const bool resized = aspect_ratio_.exchange(ratio) != ratio;
+    if (!frame_available_.exchange(true, std::memory_order_acq_rel) || resized) {
       QMetaObject::invokeMethod(this, [this] { emit frameAvailableChanged(); },
                                 Qt::QueuedConnection);
     }

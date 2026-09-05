@@ -89,6 +89,8 @@ class RoleController final : public QObject {
   Q_INVOKABLE void releaseRemoteInput();
   Q_INVOKABLE void routeKey(int key, bool pressed);
   Q_INVOKABLE void routeMouseMove(int dx, int dy);
+  Q_INVOKABLE void routeMousePosition(int x, int y);
+  Q_INVOKABLE void setHdrOutputAvailable(bool available);
   Q_INVOKABLE void routeMouseButton(int button, bool pressed);
   Q_INVOKABLE void routeMouseWheel(int delta);
   Q_INVOKABLE void disconnect();

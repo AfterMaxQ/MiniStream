@@ -126,6 +126,8 @@ Result<void, NvencError> NvencEncoder::initialize(
 #endif
   encode_config.rcParams.averageBitRate = config.bitrate_bps;
   encode_config.rcParams.maxBitRate = config.bitrate_bps;
+  encode_config.rcParams.vbvBufferSize = std::max(1U, config.bitrate_bps / config.fps);
+  encode_config.rcParams.vbvInitialDelay = encode_config.rcParams.vbvBufferSize;
   encode_config.rcParams.zeroReorderDelay = 1;
   encode_config.rcParams.enableLookahead = 0;
   encode_config.rcParams.lookaheadDepth = 0;
@@ -135,16 +137,33 @@ Result<void, NvencError> NvencEncoder::initialize(
     encode_config.encodeCodecConfig.h264Config.level = NV_ENC_LEVEL_AUTOSELECT;
     encode_config.encodeCodecConfig.h264Config.idrPeriod = NVENC_INFINITE_GOPLENGTH;
     encode_config.encodeCodecConfig.h264Config.chromaFormatIDC = 1;
+    auto& vui = encode_config.encodeCodecConfig.h264Config.h264VUIParameters;
+    vui.videoSignalTypePresentFlag = 1;
+    vui.videoFormat = static_cast<decltype(vui.videoFormat)>(5);
+    vui.videoFullRangeFlag = 0;
+    vui.colourDescriptionPresentFlag = 1;
+    vui.colourPrimaries = static_cast<decltype(vui.colourPrimaries)>(1);
+    vui.transferCharacteristics = static_cast<decltype(vui.transferCharacteristics)>(1);
+    vui.colourMatrix = static_cast<decltype(vui.colourMatrix)>(1);
   } else {
     encode_config.profileGUID = config.hdr10 ? NV_ENC_HEVC_PROFILE_MAIN10_GUID
                                              : NV_ENC_HEVC_PROFILE_MAIN_GUID;
     encode_config.encodeCodecConfig.hevcConfig.repeatSPSPPS = 1;
     encode_config.encodeCodecConfig.hevcConfig.idrPeriod = NVENC_INFINITE_GOPLENGTH;
     encode_config.encodeCodecConfig.hevcConfig.chromaFormatIDC = 1;
+    auto& vui = encode_config.encodeCodecConfig.hevcConfig.hevcVUIParameters;
+    vui.videoSignalTypePresentFlag = 1;
+    vui.videoFormat = static_cast<decltype(vui.videoFormat)>(5);
+    vui.videoFullRangeFlag = 0;
+    vui.colourDescriptionPresentFlag = 1;
+    vui.colourPrimaries = static_cast<decltype(vui.colourPrimaries)>(config.hdr10 ? 9 : 1);
+    vui.transferCharacteristics = static_cast<decltype(vui.transferCharacteristics)>(config.hdr10 ? 16 : 1);
+    vui.colourMatrix = static_cast<decltype(vui.colourMatrix)>(config.hdr10 ? 9 : 1);
 #if NVENCAPI_MAJOR_VERSION >= 13
     encode_config.encodeCodecConfig.hevcConfig.outputBitDepth =
         config.hdr10 ? NV_ENC_BIT_DEPTH_10 : NV_ENC_BIT_DEPTH_8;
-    encode_config.encodeCodecConfig.hevcConfig.inputBitDepth = NV_ENC_BIT_DEPTH_8;
+    encode_config.encodeCodecConfig.hevcConfig.inputBitDepth =
+        config.hdr10 ? NV_ENC_BIT_DEPTH_10 : NV_ENC_BIT_DEPTH_8;
 #else
     encode_config.encodeCodecConfig.hevcConfig.pixelBitDepthMinus8 = config.hdr10 ? 2 : 0;
 #endif
@@ -189,7 +208,9 @@ Result<EncodedFrame, NvencError> NvencEncoder::encode(
   (void)force_idr;
   return Result<EncodedFrame, NvencError>::err(NvencError::Unavailable);
 #else
-  if (!ready() || !frame.texture || frame.format != DXGI_FORMAT_B8G8R8A8_UNORM ||
+  const auto expected = impl_->config.hdr10 ? DXGI_FORMAT_R10G10B10A2_UNORM
+                                           : DXGI_FORMAT_B8G8R8A8_UNORM;
+  if (!ready() || !frame.texture || frame.format != expected ||
       frame.width != impl_->config.width || frame.height != impl_->config.height) {
     return Result<EncodedFrame, NvencError>::err(
         ready() ? NvencError::UnsupportedFormat : NvencError::Unavailable);
@@ -200,7 +221,7 @@ Result<EncodedFrame, NvencError> NvencEncoder::encode(
   resource.width = frame.width;
   resource.height = frame.height;
   resource.resourceToRegister = frame.texture.Get();
-  resource.bufferFormat = NV_ENC_BUFFER_FORMAT_ARGB;
+  resource.bufferFormat = impl_->config.hdr10 ? NV_ENC_BUFFER_FORMAT_ABGR10 : NV_ENC_BUFFER_FORMAT_ARGB;
   if (impl_->api.nvEncRegisterResource(impl_->session, &resource) != NV_ENC_SUCCESS) {
     return Result<EncodedFrame, NvencError>::err(NvencError::RegisterResource);
   }
@@ -226,7 +247,7 @@ Result<EncodedFrame, NvencError> NvencEncoder::encode(
   picture.version = NV_ENC_PIC_PARAMS_VER;
   picture.inputWidth = frame.width;
   picture.inputHeight = frame.height;
-  picture.inputPitch = frame.width;
+  picture.inputPitch = frame.width * 4;  // BGRA pitch is measured in bytes.
   picture.inputBuffer = mapped.mappedResource;
   picture.outputBitstream = output.bitstreamBuffer;
   picture.bufferFmt = mapped.mappedBufferFmt;
@@ -294,6 +315,8 @@ Result<void, NvencError> NvencEncoder::reconfigure_bitrate(std::uint32_t bitrate
 #endif
   config.rcParams.averageBitRate = bitrate_bps;
   config.rcParams.maxBitRate = bitrate_bps;
+  config.rcParams.vbvBufferSize = std::max(1U, bitrate_bps / impl_->config.fps);
+  config.rcParams.vbvInitialDelay = config.rcParams.vbvBufferSize;
   NV_ENC_RECONFIGURE_PARAMS params{};
   params.version = NV_ENC_RECONFIGURE_PARAMS_VER;
   params.reInitEncodeParams.version = NV_ENC_INITIALIZE_PARAMS_VER;
@@ -324,6 +347,7 @@ Result<void, NvencError> NvencEncoder::reconfigure_bitrate(std::uint32_t bitrate
     return Result<void, NvencError>::err(NvencError::Reconfigure);
   }
   impl_->config.bitrate_bps = bitrate_bps;
+  impl_->encode_config = config;
   return Result<void, NvencError>::ok();
 #endif
 }

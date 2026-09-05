@@ -59,7 +59,7 @@ class DxgiCapture {
   Result<CapturedFrame, CaptureError> acquire(Microseconds timeout);
   Result<CapturedFrame, CaptureError> resize(const CapturedFrame& frame,
                                              std::uint32_t width,
-                                             std::uint32_t height);
+                                             std::uint32_t height, bool hdr10 = false);
 
   // The encoder registers the captured texture on this same device. The
   // returned interfaces are owned by DxgiCapture and remain valid until the

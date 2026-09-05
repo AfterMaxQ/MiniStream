@@ -4,6 +4,7 @@
 #include <Windows.h>
 #include <codecapi.h>
 #include <d3d10.h>
+#include <d3d11_4.h>
 #include <dxgi.h>
 #include <mfapi.h>
 #include <mferror.h>
@@ -138,7 +139,8 @@ bool MfDecoder::select_output_type() {
     ComPtr<IMFMediaType> type;
     if (FAILED(impl_->transform->GetOutputAvailableType(0, index, &type))) return false;
     GUID subtype{};
-    if (SUCCEEDED(type->GetGUID(MF_MT_SUBTYPE, &subtype)) && subtype == MFVideoFormat_NV12 &&
+    if (SUCCEEDED(type->GetGUID(MF_MT_SUBTYPE, &subtype)) &&
+        subtype == (impl_->config.hdr10 ? MFVideoFormat_P010 : MFVideoFormat_NV12) &&
         SUCCEEDED(impl_->transform->SetOutputType(0, type.Get(), 0))) return true;
   }
 }
@@ -150,9 +152,11 @@ Result<void, MfDecodeError> MfDecoder::configure(const CodecConfig& config) {
   impl_->enumerator.Reset();
   { std::scoped_lock lock(impl_->mutex); impl_->latest = {}; }
   if (!impl_->started || config.width == 0 || config.height == 0 || config.fps == 0 ||
-      config.hdr10 || config.parameter_sets.empty() || !input_subtype(config.codec))
+      (config.hdr10 && config.codec != VideoCodec::Hevc) ||
+      config.parameter_sets.empty() || !input_subtype(config.codec))
     return Result<void, MfDecodeError>::err(MfDecodeError::InvalidConfig);
   impl_->transform = create_decoder(config.codec, impl_->manager.Get());
+  impl_->config = config;
   if (!impl_->transform) return Result<void, MfDecodeError>::err(MfDecodeError::Unavailable);
   ComPtr<IMFMediaType> input;
   if (FAILED(MFCreateMediaType(&input)) ||
@@ -253,7 +257,9 @@ Result<void, MfDecodeError> MfDecoder::drain_output() {
     output_desc.Width = impl_->config.width;
     output_desc.Height = impl_->config.height;
     output_desc.MipLevels = output_desc.ArraySize = output_desc.SampleDesc.Count = 1;
-    output_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    // QSGD3D11Texture::fromNative imports RGBA8, including its shader view.
+    output_desc.Format = impl_->config.hdr10 ? DXGI_FORMAT_R16G16B16A16_FLOAT
+                                            : DXGI_FORMAT_R8G8B8A8_UNORM;
     output_desc.Usage = D3D11_USAGE_DEFAULT;
     output_desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
     output_desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
@@ -275,7 +281,7 @@ Result<void, MfDecodeError> MfDecoder::drain_output() {
       return Result<void, MfDecodeError>::err(MfDecodeError::Output);
     D3D11_VIDEO_PROCESSOR_COLOR_SPACE yuv{};
     yuv.YCbCr_Matrix = 1;  // BT.709, limited-range NV12.
-    yuv.Nominal_Range = 1;
+    yuv.Nominal_Range = 2;  // 16..235; 1 means full range.
     D3D11_VIDEO_PROCESSOR_COLOR_SPACE rgb_space{};
     rgb_space.RGB_Range = 0;
     RECT rect{0, 0, static_cast<LONG>(impl_->config.width), static_cast<LONG>(impl_->config.height)};
@@ -285,6 +291,17 @@ Result<void, MfDecodeError> MfDecoder::drain_output() {
     impl_->video_context->VideoProcessorSetOutputTargetRect(impl_->processor.Get(), TRUE, &rect);
     impl_->video_context->VideoProcessorSetStreamColorSpace(impl_->processor.Get(), 0, &yuv);
     impl_->video_context->VideoProcessorSetOutputColorSpace(impl_->processor.Get(), &rgb_space);
+    if (impl_->config.hdr10) {
+      ComPtr<ID3D11VideoContext1> colors;
+      if (FAILED(impl_->video_context.As(&colors))) {
+        gate->ReleaseSync(0);
+        return Result<void, MfDecodeError>::err(MfDecodeError::Output);
+      }
+      colors->VideoProcessorSetStreamColorSpace1(impl_->processor.Get(), 0,
+          DXGI_COLOR_SPACE_YCBCR_STUDIO_G2084_LEFT_P2020);
+      colors->VideoProcessorSetOutputColorSpace1(impl_->processor.Get(),
+          DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709);
+    }
     D3D11_VIDEO_PROCESSOR_STREAM stream{};
     stream.Enable = TRUE;
     stream.pInputSurface = input_view.Get();

@@ -1,4 +1,8 @@
 function(ministream_add_qml_ui target)
+  qt_add_resources(${target} ministream_icons
+    PREFIX "/icons"
+    BASE "${PROJECT_SOURCE_DIR}/assets/icons"
+    FILES "${PROJECT_SOURCE_DIR}/assets/icons/ministream.png")
   set(_ui_root "${PROJECT_SOURCE_DIR}/ui")
   set(_qml_files
       "${_ui_root}/Main.qml"

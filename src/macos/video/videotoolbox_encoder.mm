@@ -172,20 +172,24 @@ VideoToolboxEncoder& VideoToolboxEncoder::operator=(VideoToolboxEncoder&&) noexc
 Result<void, VideoEncodeError> VideoToolboxEncoder::start(VideoEncodeConfig config) {
   stop();
   if (config.width == 0 || config.height == 0 || config.fps == 0 || config.bitrate_bps == 0 ||
-      (config.codec != VideoCodec::H264 && config.codec != VideoCodec::Hevc) || config.hdr10) {
+      (config.codec != VideoCodec::H264 && config.codec != VideoCodec::Hevc) ||
+      (config.hdr10 && config.codec != VideoCodec::Hevc)) {
     return Result<void, VideoEncodeError>::err(VideoEncodeError::InvalidConfig);
   }
   const auto codec = config.codec == VideoCodec::H264 ? kCMVideoCodecType_H264
                                                        : kCMVideoCodecType_HEVC;
   NSDictionary* source_attributes = @{
       (__bridge NSString*)kCVPixelBufferPixelFormatTypeKey:
-          @(kCVPixelFormatType_32BGRA),
+          @(config.hdr10 ? kCVPixelFormatType_ARGB2101010LEPacked : kCVPixelFormatType_32BGRA),
       (__bridge NSString*)kCVPixelBufferWidthKey: @(config.width),
       (__bridge NSString*)kCVPixelBufferHeightKey: @(config.height),
       (__bridge NSString*)kCVPixelBufferIOSurfacePropertiesKey: @{},
   };
+  NSDictionary* specification = @{
+      (__bridge NSString*)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: @YES};
   if (VTCompressionSessionCreate(kCFAllocatorDefault, config.width, config.height, codec,
-                                 nullptr, (__bridge CFDictionaryRef)source_attributes, nullptr,
+                                 (__bridge CFDictionaryRef)specification,
+                                 (__bridge CFDictionaryRef)source_attributes, nullptr,
                                  output_callback, impl_.get(), &impl_->session) != noErr ||
       !impl_->session) {
     stop();
@@ -204,9 +208,18 @@ Result<void, VideoEncodeError> VideoToolboxEncoder::start(VideoEncodeConfig conf
     VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_ProfileLevel,
                          kVTProfileLevel_H264_High_AutoLevel);
   } else {
-    VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_ProfileLevel,
-                         kVTProfileLevel_HEVC_Main_AutoLevel);
+    if (VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_ProfileLevel,
+        config.hdr10 ? kVTProfileLevel_HEVC_Main10_AutoLevel : kVTProfileLevel_HEVC_Main_AutoLevel) != noErr) {
+      stop();
+      return Result<void, VideoEncodeError>::err(VideoEncodeError::Initialize);
+    }
   }
+  VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_ColorPrimaries,
+      config.hdr10 ? kCVImageBufferColorPrimaries_ITU_R_2020 : kCVImageBufferColorPrimaries_ITU_R_709_2);
+  VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_TransferFunction,
+      config.hdr10 ? kCVImageBufferTransferFunction_SMPTE_ST_2084_PQ : kCVImageBufferTransferFunction_ITU_R_709_2);
+  VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_YCbCrMatrix,
+      config.hdr10 ? kCVImageBufferYCbCrMatrix_ITU_R_2020 : kCVImageBufferYCbCrMatrix_ITU_R_709_2);
   if (VTCompressionSessionPrepareToEncodeFrames(impl_->session) != noErr) {
     stop();
     return Result<void, VideoEncodeError>::err(VideoEncodeError::Initialize);

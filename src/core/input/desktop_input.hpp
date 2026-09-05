@@ -28,6 +28,8 @@ enum class DesktopMouseButton : std::uint16_t {
 
 inline constexpr std::uint16_t kDesktopMouseRelease = 0x8000U;
 inline constexpr std::uint16_t kDesktopKeyRelease = 0x0001U;
+// Absolute mouse coordinates are normalized to 0..65535 within the captured display.
+inline constexpr std::uint16_t kDesktopMouseAbsolute = 0x0001U;
 
 struct DesktopInput {
   DesktopInputKind kind{DesktopInputKind::Key};

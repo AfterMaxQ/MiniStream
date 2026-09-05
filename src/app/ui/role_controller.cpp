@@ -19,6 +19,7 @@
 #include <QSysInfo>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QGuiApplication>
 
 #include <algorithm>
 #include <string>
@@ -129,6 +130,15 @@ RoleController::RoleController(QObject* parent) : QObject(parent) {
 #endif
 
   tick_timer_.setInterval(10);
+  tick_timer_.setTimerType(Qt::PreciseTimer);
+  connect(qGuiApp, &QGuiApplication::applicationStateChanged, this,
+          [this](Qt::ApplicationState state) {
+            if (state == Qt::ApplicationActive && !connected()) {
+              refreshCapabilities();
+              failure_text_.clear();
+              emit stateChanged();
+            }
+          });
   connect(&tick_timer_, &QTimer::timeout, this, &RoleController::tick);
   tick_timer_.start();
 }
@@ -667,6 +677,24 @@ void RoleController::routeMouseMove(int dx, int dy) {
 #endif
 }
 
+void RoleController::routeMousePosition(int x, int y) {
+#if defined(_WIN32) || defined(__APPLE__)
+  if (remote_ && remoteInputActive())
+    remote_->route_input({DesktopInputKind::MouseMove, kDesktopMouseAbsolute,
+                         std::clamp(x, 0, 65535), std::clamp(y, 0, 65535), 0});
+#endif
+}
+
+void RoleController::setHdrOutputAvailable(bool available) {
+#if defined(_WIN32) || defined(__APPLE__)
+  if (remote_) {
+    remote_->set_hdr_output(available);
+    remote_capabilities_ = remote_->inspect();
+    emit stateChanged();
+  }
+#endif
+}
+
 void RoleController::routeMouseButton(int button, bool pressed) {
 #ifdef _WIN32
   if (remote_ && remoteInputActive()) {
@@ -712,6 +740,9 @@ void RoleController::disconnect() {
 
 void RoleController::openPermissionSettings() {
 #ifdef __APPLE__
+  MacControlledBackend::request_permissions();
+  refreshCapabilities();
+  emit stateChanged();
   const auto video_needs_access = controlled_capabilities_.video.detail.find(
       "permission required") != std::string::npos;
   const auto url = video_needs_access
@@ -724,6 +755,8 @@ void RoleController::openPermissionSettings() {
 }
 
 void RoleController::tick() {
+  const int interval = connected() ? 2 : 10;
+  if (tick_timer_.interval() != interval) tick_timer_.setInterval(interval);
 #if defined(_WIN32) || defined(__APPLE__)
   if (controlled_ && mode_ == RoleMode::Controlled) {
     const auto before_state = controlled_->state();

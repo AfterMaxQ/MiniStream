@@ -71,7 +71,7 @@ ApplicationWindow {
         anchors.horizontalCenter: parent.horizontalCenter
         width: Math.min(Math.max(0, parent.width - Tokens.space32), 360)
         height: 40
-        visible: !roleController.pairing
+        visible: !roleController.pairing && !roleController.connected
         z: 10
 
         Rectangle {
@@ -160,6 +160,7 @@ ApplicationWindow {
     StreamPage {
         anchors.fill: parent
         controller: roleController
+        appWindow: window
         visible: roleController.connected && roleController.mode === 2
     }
 

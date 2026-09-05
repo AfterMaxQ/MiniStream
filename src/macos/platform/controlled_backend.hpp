@@ -11,6 +11,7 @@ class MacControlledBackend final : public ControlledBackend {
  public:
   MacControlledBackend();
   ~MacControlledBackend() override;
+  static void request_permissions();
 
   [[nodiscard]] ControlledCapabilities inspect() const override;
   bool start() override;

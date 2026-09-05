@@ -9,6 +9,7 @@
 
 #include <ApplicationServices/ApplicationServices.h>
 #include <VideoToolbox/VideoToolbox.h>
+#import <AppKit/AppKit.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -72,6 +73,17 @@ struct MacControlledBackend::Impl {
 MacControlledBackend::MacControlledBackend() : impl_(std::make_unique<Impl>()) {}
 MacControlledBackend::~MacControlledBackend() { stop(); }
 
+void MacControlledBackend::request_permissions() {
+  // Prompt from the running bundle so it appears in System Settings directly.
+  const void* keys[] = {kAXTrustedCheckOptionPrompt};
+  const void* values[] = {kCFBooleanTrue};
+  auto options = CFDictionaryCreate(nullptr, keys, values, 1,
+      &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+  AXIsProcessTrustedWithOptions(options);
+  CFRelease(options);
+  if (!CGPreflightScreenCaptureAccess()) CGRequestScreenCaptureAccess();
+}
+
 ControlledCapabilities MacControlledBackend::inspect() const {
   const auto network = UdpEndpoint{}.bind(0);
   bool screen_permission = true;
@@ -81,6 +93,15 @@ ControlledCapabilities MacControlledBackend::inspect() const {
   const bool trusted = AccessibilityInput::trusted();
   const bool h264 = has_hardware_encoder(kCMVideoCodecType_H264);
   const bool hevc = has_hardware_encoder(kCMVideoCodecType_HEVC);
+  bool hdr = false;
+#if defined(__arm64__)
+  if (@available(macOS 15.0, *)) {
+    for (NSScreen* screen in NSScreen.screens) {
+      if ([screen.deviceDescription[@"NSScreenNumber"] unsignedIntValue] == CGMainDisplayID())
+        hdr = hevc && screen.maximumPotentialExtendedDynamicRangeColorComponentValue > 1.0;
+    }
+  }
+#endif
   const bool video_ready = screen_permission && (h264 || hevc);
   const auto audio = SystemAudioCapture::inspect();
   const auto video_detail = !screen_permission
@@ -95,7 +116,7 @@ ControlledCapabilities MacControlledBackend::inspect() const {
           {false, "SDL gamepad optional"},
           h264,
           hevc,
-          false,
+          hdr,
           video_ready ? std::min<std::uint32_t>(
                             3840U, static_cast<std::uint32_t>(CGDisplayPixelsWide(CGMainDisplayID())))
                       : 0U,
@@ -149,7 +170,8 @@ void MacControlledBackend::request_keyframe() noexcept {
 
 bool MacControlledBackend::configure_video(const CodecConfig& config) {
   if (!impl_->started || config.width == 0 || config.height == 0 || config.fps == 0 ||
-      config.hdr10 || (config.codec != VideoCodec::H264 && config.codec != VideoCodec::Hevc)) {
+      (config.hdr10 && (config.codec != VideoCodec::Hevc || !inspect().hdr10)) ||
+      (config.codec != VideoCodec::H264 && config.codec != VideoCodec::Hevc)) {
     return false;
   }
   impl_->requested = config;
@@ -162,7 +184,7 @@ bool MacControlledBackend::configure_video(const CodecConfig& config) {
   if (impl_->encoder) impl_->encoder->stop();
   if (impl_->capture) {
     impl_->capture->stop();
-    if (!impl_->capture->start(config.width, config.height)) {
+    if (!impl_->capture->start(config.width, config.height, config.hdr10)) {
       impl_->configured = false;
       return false;
     }
@@ -205,7 +227,7 @@ std::optional<EncodedFrame> MacControlledBackend::next_video() {
                              : static_cast<std::uint32_t>(profile.initial_bitrate_bps);
     const auto width = impl_->configured ? impl_->requested.width : source.width;
     const auto height = impl_->configured ? impl_->requested.height : source.height;
-    if (!impl_->encoder->start({codec, width, height, fps, bitrate, false})) {
+    if (!impl_->encoder->start({codec, width, height, fps, bitrate, impl_->requested.hdr10})) {
       return std::nullopt;
     }
     impl_->active = impl_->encoder->codec_config();

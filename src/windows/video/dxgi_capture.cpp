@@ -72,10 +72,29 @@ VertexOutput vertex_main(uint vertex_id : SV_VertexID) {
 
 Texture2D<float4> source_texture : register(t0);
 SamplerState source_sampler : register(s0);
+cbuffer ColorOptions : register(b0) { uint source_hdr; uint output_hdr; uint2 padding; };
+
+float3 pq(float3 color) {
+  float3 p = pow(max(color, 0.0) * (80.0 / 10000.0), 2610.0 / 16384.0);
+  return pow((3424.0 / 4096.0 + (2413.0 / 128.0) * p) /
+             (1.0 + (2392.0 / 128.0) * p), 2523.0 / 32.0);
+}
 
 float4 pixel_main(VertexOutput input) : SV_TARGET {
   const float4 source = source_texture.SampleLevel(source_sampler, input.texcoord, 0.0);
-  const float3 linear_color = saturate(source.rgb);
+  float3 linear_color = max(source.rgb, 0.0);
+  if (output_hdr != 0) {
+    float3 rec2020 = mul(float3x3(0.627404, 0.329283, 0.043313,
+                                 0.069097, 0.919540, 0.011362,
+                                 0.016391, 0.088013, 0.895595), linear_color);
+    return float4(pq(rec2020), 1.0);
+  }
+  if (source_hdr != 0) {
+    linear_color *= 80.0 / 203.0;
+    float luminance = dot(linear_color, float3(0.2126, 0.7152, 0.0722));
+    linear_color *= (1.0 + luminance / 24.27) / (1.0 + luminance);
+  }
+  linear_color = saturate(linear_color);
   const float3 exponent = float3(1.0 / 2.4, 1.0 / 2.4, 1.0 / 2.4);
   const float3 high = 1.055 * pow(linear_color, exponent) - 0.055;
   const float3 low = 12.92 * linear_color;
@@ -130,6 +149,7 @@ struct DxgiCapture::Impl {
   Microsoft::WRL::ComPtr<ID3D11VertexShader> fp16_vertex_shader;
   Microsoft::WRL::ComPtr<ID3D11PixelShader> fp16_pixel_shader;
   Microsoft::WRL::ComPtr<ID3D11SamplerState> fp16_sampler;
+  Microsoft::WRL::ComPtr<ID3D11Buffer> color_options;
   std::uint32_t processor_input_width{};
   std::uint32_t processor_input_height{};
   std::uint32_t processor_output_width{};
@@ -185,7 +205,12 @@ Result<void, CaptureError> DxgiCapture::initialize() {
     impl_->capture_info.color_space = output_description1.ColorSpace;
     impl_->capture_info.bits_per_color = output_description1.BitsPerColor;
   }
-  if (FAILED(output1->DuplicateOutput(impl_->device.Get(), &impl_->duplication))) {
+  Microsoft::WRL::ComPtr<IDXGIOutput5> output5;
+  const DXGI_FORMAT formats[] = {DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_B8G8R8A8_UNORM};
+  const auto duplicated = SUCCEEDED(output.As(&output5))
+      ? output5->DuplicateOutput1(impl_->device.Get(), 0, 2, formats, &impl_->duplication)
+      : output1->DuplicateOutput(impl_->device.Get(), &impl_->duplication);
+  if (FAILED(duplicated)) {
     return Result<void, CaptureError>::err(CaptureError::Initialize);
   }
   DXGI_OUTDUPL_DESC duplication_description{};
@@ -254,18 +279,19 @@ Result<CapturedFrame, CaptureError> DxgiCapture::acquire(Microseconds timeout) {
 
 Result<CapturedFrame, CaptureError> DxgiCapture::resize(const CapturedFrame& frame,
                                                         std::uint32_t width,
-                                                        std::uint32_t height) {
+                                                        std::uint32_t height, bool hdr10) {
   if (!impl_ || !impl_->device || !impl_->context || !frame.texture || width == 0 ||
       height == 0) {
     return Result<CapturedFrame, CaptureError>::err(CaptureError::Initialize);
   }
   if (frame.width == width && frame.height == height &&
-      frame.format == DXGI_FORMAT_B8G8R8A8_UNORM) {
+      frame.format == DXGI_FORMAT_B8G8R8A8_UNORM && !hdr10) {
     return Result<CapturedFrame, CaptureError>::ok(frame);
   }
   if (frame.format == DXGI_FORMAT_R16G16B16A16_FLOAT) {
     if (!impl_->capture_info.has_color_space ||
-        impl_->capture_info.color_space != DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709) {
+        (impl_->capture_info.color_space != DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709 &&
+         impl_->capture_info.color_space != DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020)) {
       return Result<CapturedFrame, CaptureError>::err(CaptureError::UnsupportedFormat);
     }
     if (!impl_->fp16_vertex_shader || !impl_->fp16_pixel_shader || !impl_->fp16_sampler) {
@@ -307,7 +333,7 @@ Result<CapturedFrame, CaptureError> DxgiCapture::resize(const CapturedFrame& fra
     output_description.Height = height;
     output_description.MipLevels = 1;
     output_description.ArraySize = 1;
-    output_description.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    output_description.Format = hdr10 ? DXGI_FORMAT_R10G10B10A2_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
     output_description.SampleDesc.Count = 1;
     output_description.Usage = D3D11_USAGE_DEFAULT;
     output_description.BindFlags = D3D11_BIND_RENDER_TARGET;
@@ -323,6 +349,20 @@ Result<CapturedFrame, CaptureError> DxgiCapture::resize(const CapturedFrame& fra
       return Result<CapturedFrame, CaptureError>::err(CaptureError::Initialize);
     }
 
+    if (!impl_->color_options) {
+      D3D11_BUFFER_DESC options{};
+      options.ByteWidth = 16;
+      options.Usage = D3D11_USAGE_DEFAULT;
+      options.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+      if (FAILED(impl_->device->CreateBuffer(&options, nullptr, &impl_->color_options)))
+        return Result<CapturedFrame, CaptureError>::err(CaptureError::Initialize);
+    }
+    const UINT colors[4] = {
+        impl_->capture_info.color_space == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020 ? 1U : 0U,
+        hdr10 ? 1U : 0U, 0, 0};
+    impl_->context->UpdateSubresource(impl_->color_options.Get(), 0, nullptr, colors, 0, 0);
+    ID3D11Buffer* options = impl_->color_options.Get();
+    impl_->context->PSSetConstantBuffers(0, 1, &options);
     const D3D11_VIEWPORT viewport{0.0F, 0.0F, static_cast<float>(width),
                                   static_cast<float>(height), 0.0F, 1.0F};
     ID3D11RenderTargetView* render_target = output_view.Get();
@@ -342,9 +382,9 @@ Result<CapturedFrame, CaptureError> DxgiCapture::resize(const CapturedFrame& fra
     impl_->context->OMSetRenderTargets(0, nullptr, nullptr);
     return Result<CapturedFrame, CaptureError>::ok(
         {std::move(output_texture), frame.frame_id, frame.captured_at,
-         DXGI_FORMAT_B8G8R8A8_UNORM, width, height});
+         output_description.Format, width, height});
   }
-  if (frame.format != DXGI_FORMAT_B8G8R8A8_UNORM) {
+  if (hdr10 || frame.format != DXGI_FORMAT_B8G8R8A8_UNORM) {
     return Result<CapturedFrame, CaptureError>::err(CaptureError::UnsupportedFormat);
   }
 

@@ -46,6 +46,7 @@ class RemoteRuntime {
   RemoteRuntime& operator=(const RemoteRuntime&) = delete;
 
   [[nodiscard]] RemoteCapabilities inspect() const;
+  void set_hdr_output(bool enabled);
   [[nodiscard]] bool start();
   void stop() noexcept;
   [[nodiscard]] RoleState state() const noexcept;
@@ -72,6 +73,7 @@ class RemoteRuntime {
   void tick();
 
  private:
+  bool hdr_output_enabled_{};
   void disconnect_session() noexcept;
   void reset_pairing() noexcept;
   void process_datagram(const ReceivedDatagram& incoming);

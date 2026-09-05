@@ -2,6 +2,12 @@
 
 namespace ministream {
 namespace {
+bool valid_mouse_move(const DesktopInput& input) {
+  return input.data == 0 && (input.flags & ~kDesktopMouseAbsolute) == 0 &&
+         (!(input.flags & kDesktopMouseAbsolute) ||
+          (input.x >= 0 && input.x <= 65535 && input.y >= 0 && input.y <= 65535));
+}
+
 bool valid_mouse_button(std::uint16_t flags) {
   const auto button = flags & ~kDesktopMouseRelease;
   return (flags & ~(kDesktopMouseRelease | 0x00FFU)) == 0U &&
@@ -32,6 +38,7 @@ std::uint16_t get16(const std::byte* in) {
 }  // namespace
 
 std::vector<std::byte> encode_desktop_input(const DesktopInput& input) {
+  if (input.kind == DesktopInputKind::MouseMove && !valid_mouse_move(input)) return {};
   if (input.kind < DesktopInputKind::Key || input.kind > DesktopInputKind::ReleaseAll) {
     return {};
   }
@@ -72,6 +79,8 @@ std::optional<DesktopInput> decode_desktop_input(std::span<const std::byte> byte
   input.x = static_cast<std::int32_t>(get(bytes.data() + 3));
   input.y = static_cast<std::int32_t>(get(bytes.data() + 7));
   input.data = get16(bytes.data() + 11);
+  if (input.kind == DesktopInputKind::MouseMove && !valid_mouse_move(input))
+    return std::nullopt;
   if (input.kind == DesktopInputKind::Key &&
       (!desktop_key_from_wire(input.data) || (input.flags & ~kDesktopKeyRelease) != 0U ||
        input.x != 0 || input.y != 0)) {

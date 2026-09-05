@@ -32,6 +32,7 @@ struct WindowsControlledBackend::Impl {
   bool codec_support_probed{};
   bool h264_supported{};
   bool hevc_supported{};
+  bool hdr_supported{};
   std::string last_start_error;
   std::function<void(const RumblePacket&)> rumble_sender;
 };
@@ -53,7 +54,7 @@ ControlledCapabilities WindowsControlledBackend::inspect() const {
           {host.controller.ready, host.controller.detail},
           video.ready && h264,
           video.ready && hevc,
-          host.hdr10,
+          impl_->codec_support_probed ? impl_->hdr_supported : host.hdr10,
           video.ready ? host.max_width : 0U,
           video.ready ? host.max_height : 0U,
           video.ready ? host.max_fps : 0U};
@@ -93,21 +94,20 @@ bool WindowsControlledBackend::start() {
   };
   impl_->h264_supported = supports(VideoCodec::H264);
   impl_->hevc_supported = supports(VideoCodec::Hevc);
+  NvencEncoder hdr_probe;
+  impl_->hdr_supported = host.hdr10 && impl_->hevc_supported &&
+      impl_->capture->format() == DXGI_FORMAT_R16G16B16A16_FLOAT &&
+      static_cast<bool>(hdr_probe.initialize(impl_->capture->device(), impl_->capture->context(),
+          {VideoCodec::Hevc, probe_width, probe_height, 60, 20'000'000, true}));
+  hdr_probe.stop();
   impl_->codec_support_probed = true;
   if (!impl_->h264_supported) {
     stop();
     return false;
   }
   const auto capture_info = impl_->capture->capture_info();
+  impl_->input->set_display(capture_info.monitor);
   const auto capture_status = classify_dxgi_capture(capture_info);
-  if (capture_status == DxgiCaptureStatus::HdrActive) {
-    const auto diagnostic = describe_dxgi_capture(capture_info);
-    stop();
-    impl_->last_start_error =
-        "Windows HDR capture is not supported yet; turn off HDR for this display; " +
-        diagnostic;
-    return false;
-  }
   if (capture_status == DxgiCaptureStatus::UnsupportedFormat) {
     const auto diagnostic = describe_dxgi_capture(capture_info);
     stop();
@@ -153,13 +153,15 @@ void WindowsControlledBackend::stop() noexcept {
   impl_->codec_support_probed = false;
   impl_->h264_supported = false;
   impl_->hevc_supported = false;
+  impl_->hdr_supported = false;
   impl_->started = false;
   impl_->keyframe_pending = true;
 }
 
 bool WindowsControlledBackend::configure_video(const CodecConfig& config) {
   if (!impl_->started || config.width == 0 || config.height == 0 || config.fps == 0 ||
-      (config.codec != VideoCodec::H264 && config.codec != VideoCodec::Hevc) || config.hdr10) {
+      (config.codec != VideoCodec::H264 && config.codec != VideoCodec::Hevc) ||
+      (config.hdr10 && (!impl_->hdr_supported || config.codec != VideoCodec::Hevc))) {
     return false;
   }
   if (!impl_->encoder) {
@@ -170,7 +172,7 @@ bool WindowsControlledBackend::configure_video(const CodecConfig& config) {
   impl_->next_video_id = 0;
   impl_->keyframe_pending = true;
   const NvencConfig encoder_config{config.codec, config.width, config.height,
-                                   config.fps, impl_->bitrate_bps, false};
+                                   config.fps, impl_->bitrate_bps, config.hdr10};
   if (!impl_->encoder->initialize(impl_->capture->device(), impl_->capture->context(),
                                   encoder_config)) {
     impl_->configured = false;
@@ -232,7 +234,8 @@ std::optional<EncodedFrame> WindowsControlledBackend::next_video() {
   const auto target_height = impl_->configured ? impl_->requested.height : frame.height;
   if (frame.format != DXGI_FORMAT_B8G8R8A8_UNORM || frame.width != target_width ||
       frame.height != target_height) {
-    const auto resized = impl_->capture->resize(frame, target_width, target_height);
+    const auto resized = impl_->capture->resize(frame, target_width, target_height,
+                                               impl_->requested.hdr10);
     if (!resized) {
       return std::nullopt;
     }

@@ -2,7 +2,11 @@
 #include "windows/input/desktop_key_windows.hpp"
 
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <Windows.h>
+#include <algorithm>
 
 namespace ministream {
 
@@ -31,7 +35,22 @@ Result<void, RemoteInputError> RemoteInputSink::inject(const DesktopInput& input
       event.type = INPUT_MOUSE;
       event.mi.dx = input.x;
       event.mi.dy = input.y;
-      event.mi.dwFlags = MOUSEEVENTF_MOVE;
+      event.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_MOVE_NOCOALESCE;
+      if (input.flags & kDesktopMouseAbsolute) {
+        MONITORINFO display{sizeof(MONITORINFO)};
+        if (!GetMonitorInfoW(reinterpret_cast<HMONITOR>(monitor_), &display))
+          display.rcMonitor = {0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)};
+        const auto& rect = display.rcMonitor;
+        const auto x = rect.left + static_cast<std::int64_t>(input.x) *
+                                     (rect.right - rect.left - 1) / 65535;
+        const auto y = rect.top + static_cast<std::int64_t>(input.y) *
+                                    (rect.bottom - rect.top - 1) / 65535;
+        event.mi.dx = static_cast<LONG>((x - GetSystemMetrics(SM_XVIRTUALSCREEN)) * 65535 /
+                                       std::max(1, GetSystemMetrics(SM_CXVIRTUALSCREEN) - 1));
+        event.mi.dy = static_cast<LONG>((y - GetSystemMetrics(SM_YVIRTUALSCREEN)) * 65535 /
+                                       std::max(1, GetSystemMetrics(SM_CYVIRTUALSCREEN) - 1));
+        event.mi.dwFlags |= MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
+      }
       break;
     case DesktopInputKind::MouseButton: {
       const auto raw_button = input.flags & ~kDesktopMouseRelease;

@@ -35,6 +35,10 @@ std::optional<StreamProfile> select_common_stream_profile(
   for (const auto id : {StreamProfileId::Quality4K, StreamProfileId::Balanced1440,
                         StreamProfileId::Debug1080}) {
     auto profile = stream_profile(id);
+    if (host.capabilities.hevc && remote.hevc && host.capabilities.hdr10 && remote.hdr10)
+      profile.codec = VideoCodec::Hevc;
+    if (profile.codec == VideoCodec::Hevc)
+      profile.hdr10 = host.capabilities.hdr10 && remote.hdr10;
     if (supports(profile)) {
       profile.initial_bitrate_bps = std::clamp(
           profile.initial_bitrate_bps, profile.minimum_bitrate_bps,

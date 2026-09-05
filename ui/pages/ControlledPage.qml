@@ -87,7 +87,7 @@ Item {
         AppButton {
             anchors.horizontalCenter: parent.horizontalCenter
             visible: root.controller.permissionActionAvailable
-            text: "Open System Settings"
+            text: "Grant permissions"
             onClicked: root.controller.openPermissionSettings()
         }
     }

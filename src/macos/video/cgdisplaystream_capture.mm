@@ -47,7 +47,7 @@ CGDisplayStreamCapture::CGDisplayStreamCapture(CGDisplayStreamCapture&&) noexcep
 CGDisplayStreamCapture& CGDisplayStreamCapture::operator=(CGDisplayStreamCapture&&) noexcept = default;
 
 Result<void, DisplayCaptureError> CGDisplayStreamCapture::start(std::uint32_t width,
-                                                               std::uint32_t height) {
+                                                               std::uint32_t height, bool hdr10) {
   stop();
   if (!CGPreflightScreenCaptureAccess()) {
     CGRequestScreenCaptureAccess();
@@ -87,6 +87,15 @@ Result<void, DisplayCaptureError> CGDisplayStreamCapture::start(std::uint32_t wi
   config.width = impl_->width;
   config.height = impl_->height;
   config.pixelFormat = kCVPixelFormatType_32BGRA;
+  if (hdr10) {
+    if (@available(macOS 15.0, *)) {
+      config.captureDynamicRange = SCCaptureDynamicRangeHDRCanonicalDisplay;
+      config.pixelFormat = kCVPixelFormatType_ARGB2101010LEPacked;
+      config.colorSpaceName = kCGColorSpaceITUR_2100_PQ;
+    } else {
+      return Result<void, DisplayCaptureError>::err(DisplayCaptureError::Initialize);
+    }
+  }
   config.minimumFrameInterval = CMTimeMake(1, 60);
   config.queueDepth = 3;
   config.showsCursor = NO;
