@@ -527,7 +527,7 @@ void RoleController::refresh() {
     if (remote_->state() == RoleState::Idle) {
       (void)remote_->start();
     }
-    (void)remote_->begin_discovery(Microseconds{750});
+    (void)remote_->begin_discovery(Microseconds{750'000});
   }
 #endif
   failure_text_.clear();
@@ -536,10 +536,15 @@ void RoleController::refresh() {
 
 void RoleController::findDevices() {
 #if defined(_WIN32) || defined(__APPLE__)
+#ifdef __APPLE__
+  constexpr auto discovery_timeout = Microseconds{750'000};
+#else
+  constexpr auto discovery_timeout = Microseconds{750};
+#endif
   if (mode_ == RoleMode::Remote && remote_) {
     if (remote_->state() == RoleState::Idle && !remote_->start()) {
       failure_text_ = QStringLiteral("Remote backend is not ready.");
-    } else if (!remote_->begin_discovery(Microseconds{750}) && !searching()) {
+    } else if (!remote_->begin_discovery(discovery_timeout) && !searching()) {
       failure_text_.clear();
     } else {
       failure_text_.clear();
