@@ -132,6 +132,12 @@ bool RemoteRuntime::begin_discovery(Microseconds timeout) {
 }
 
 bool RemoteRuntime::connect(std::size_t index) {
+  if (index >= hosts_.size()) return false;
+  const auto profile = select_common_stream_profile(hosts_[index], inspect());
+  return profile && connect(index, profile->id);
+}
+
+bool RemoteRuntime::connect(std::size_t index, StreamProfileId profile_id) {
   if (state_ != RoleState::RemoteBrowsing || index >= hosts_.size() || !backend_) {
     return false;
   }
@@ -146,7 +152,7 @@ bool RemoteRuntime::connect(std::size_t index) {
     return false;
   }
 
-  const auto profile = select_common_stream_profile(*selected_host_, inspect());
+  const auto profile = select_stream_profile(*selected_host_, inspect(), profile_id);
   if (!profile) {
     disconnect_session();
     selected_host_.reset();
@@ -551,7 +557,7 @@ void RemoteRuntime::tick() {
     }
   }
   if (state_ == RoleState::RemoteConnecting || pairing() || streaming()) {
-    for (const auto& incoming : session_->try_receive_batch(512)) {
+    for (const auto& incoming : session_->try_receive_batch(128)) {
       if (session_->peer_locked() && !session_->matches_peer(incoming)) {
         continue;
       }
@@ -599,14 +605,13 @@ void RemoteRuntime::tick() {
       (void)send_reliable_input(message);
     }
     if (!reliable_input_.take_failures().empty()) {
-      disconnect_session();
-      return;
+      if (input_router_) input_router_->end();
     }
   }
   if (streaming()) {
     if (!codec_configured_ || awaiting_keyframe_) request_keyframe(now);
     tick_confirmation_grace(now);
-    play_audio(now);
+    play_audio(SteadyClock::now());
   }
   if (streaming() && input_capture_.routes_to_remote(InputDevice::Gamepad) && backend_) {
     // Repeated neutral state also recovers a lost unplug/release datagram.
@@ -684,7 +689,7 @@ void RemoteRuntime::play_audio(SteadyClock::time_point now) {
         // Loopback sources may stop producing packets during silence. Re-prime
         // from the next received sequence instead of advancing PLC forever.
         audio_primed_ = false;
-        audio_jitter_ = AudioJitterBuffer{{Microseconds{20'000}, Microseconds{60'000}}};
+        audio_jitter_ = AudioJitterBuffer{{Microseconds{30'000}, Microseconds{120'000}}};
         next_audio_playout_.reset();
         return;
       }
@@ -775,7 +780,7 @@ void RemoteRuntime::disconnect_session() noexcept {
   audio_primed_ = false;
   missing_audio_frames_ = 0;
   next_audio_playout_.reset();
-  audio_jitter_ = AudioJitterBuffer{{Microseconds{20'000}, Microseconds{60'000}}};
+  audio_jitter_ = AudioJitterBuffer{{Microseconds{30'000}, Microseconds{120'000}}};
   gamepad_coalescer_ = InputCoalescer{};
   reliable_input_ = ReliableControl{};
   session_keys_.reset();

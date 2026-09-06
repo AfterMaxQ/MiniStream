@@ -24,6 +24,9 @@ struct StreamProfile {
 };
 
 StreamProfile stream_profile(StreamProfileId id) noexcept;
+std::optional<StreamProfile> select_stream_profile(
+    const DiscoveredHost& host, const RemoteCapabilities& remote,
+    StreamProfileId preferred) noexcept;
 std::optional<StreamProfile> select_common_stream_profile(
     const DiscoveredHost& host, const RemoteCapabilities& remote) noexcept;
 

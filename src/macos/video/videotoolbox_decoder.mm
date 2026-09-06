@@ -212,19 +212,16 @@ Result<void, VideoDecodeError> VideoToolboxDecoder::decode(
   if (sample_status != noErr) {
     return Result<void, VideoDecodeError>::err(VideoDecodeError::Decode);
   }
-  // Run the callback before returning so the bridge can publish only the
-  // newest frame and never queue an unbounded decoded-frame backlog.
+  // VideoToolbox publishes into a latest-frame slot from its callback. Do not
+  // block the UI/media tick waiting for every submitted frame to finish.
   {
     std::scoped_lock lock(impl_->mutex);
     impl_->last_output_status = noErr;
   }
   const auto status = VTDecompressionSessionDecodeFrame(impl_->session, sample, 0,
                                                         nullptr, nullptr);
-  const auto waited = VTDecompressionSessionWaitForAsynchronousFrames(impl_->session);
   CFRelease(sample);
-  std::scoped_lock lock(impl_->mutex);
-  return status == noErr && waited == noErr && impl_->last_output_status == noErr
-                         ? Result<void, VideoDecodeError>::ok()
+  return status == noErr ? Result<void, VideoDecodeError>::ok()
                          : Result<void, VideoDecodeError>::err(VideoDecodeError::Decode);
 }
 

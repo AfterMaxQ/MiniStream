@@ -273,6 +273,21 @@ bool RoleController::remoteInputActive() const noexcept {
 #endif
 }
 
+QStringList RoleController::qualityOptions() const {
+  return {QStringLiteral("Smooth · 1080p60 · H.264"),
+          QStringLiteral("Sharp · 1440p60 · HEVC"),
+          QStringLiteral("Ultra · 4K60 · HEVC")};
+}
+
+int RoleController::streamQuality() const noexcept { return stream_quality_; }
+
+void RoleController::setStreamQuality(int quality) {
+  const int requested = std::clamp(quality, 0, 2);
+  if (requested == stream_quality_ || connected() || connecting() || pairing()) return;
+  stream_quality_ = requested;
+  emit stateChanged();
+}
+
 QString RoleController::deviceLabel() const {
   QString system;
   switch (current_system()) {
@@ -557,9 +572,10 @@ void RoleController::findDevices() {
 }
 
 void RoleController::connectToDevice(int index) {
+  const auto profile = static_cast<StreamProfileId>(stream_quality_);
 #ifdef _WIN32
   if (mode_ == RoleMode::Remote && remote_) {
-    if (!remote_->connect(static_cast<std::size_t>(std::max(index, 0)))) {
+    if (!remote_->connect(static_cast<std::size_t>(std::max(index, 0)), profile)) {
       failure_text_ = QStringLiteral("Unable to connect to this device.");
     } else {
       failure_text_.clear();
@@ -568,7 +584,7 @@ void RoleController::connectToDevice(int index) {
   }
 #elif defined(__APPLE__)
   if (mode_ == RoleMode::Remote && remote_) {
-    if (!remote_->connect(static_cast<std::size_t>(std::max(index, 0)))) {
+    if (!remote_->connect(static_cast<std::size_t>(std::max(index, 0)), profile)) {
       failure_text_ = QStringLiteral("Unable to connect to this device.");
     } else {
       failure_text_.clear();

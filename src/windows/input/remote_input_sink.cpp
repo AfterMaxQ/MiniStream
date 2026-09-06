@@ -7,6 +7,8 @@
 #endif
 #include <Windows.h>
 #include <algorithm>
+#include <iostream>
+#include <string>
 
 namespace ministream {
 
@@ -84,6 +86,11 @@ Result<void, RemoteInputError> RemoteInputSink::inject(const DesktopInput& input
   }
 
   if (SendInput(1, &event, sizeof(INPUT)) != 1) {
+    const auto error = GetLastError();
+    std::clog << "SendInput failed, error=" << error << '\n';
+    const auto diagnostic = "MiniStream SendInput failed, error=" +
+                            std::to_string(error) + "\n";
+    OutputDebugStringA(diagnostic.c_str());
     return Result<void, RemoteInputError>::err(RemoteInputError::InjectionFailed);
   }
   if (key) {

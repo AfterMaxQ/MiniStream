@@ -27,6 +27,8 @@ class RoleController final : public QObject {
   Q_PROPERTY(bool connected READ connected NOTIFY stateChanged)
   Q_PROPERTY(bool pairing READ pairing NOTIFY stateChanged)
   Q_PROPERTY(bool remoteInputActive READ remoteInputActive NOTIFY stateChanged)
+  Q_PROPERTY(QStringList qualityOptions READ qualityOptions CONSTANT)
+  Q_PROPERTY(int streamQuality READ streamQuality WRITE setStreamQuality NOTIFY stateChanged)
   Q_PROPERTY(QString deviceLabel READ deviceLabel CONSTANT)
   Q_PROPERTY(QString broadcastStatus READ broadcastStatus NOTIFY stateChanged)
   Q_PROPERTY(QStringList hosts READ hosts NOTIFY stateChanged)
@@ -60,6 +62,9 @@ class RoleController final : public QObject {
   [[nodiscard]] bool connected() const noexcept;
   [[nodiscard]] bool pairing() const noexcept;
   [[nodiscard]] bool remoteInputActive() const noexcept;
+  [[nodiscard]] QStringList qualityOptions() const;
+  [[nodiscard]] int streamQuality() const noexcept;
+  Q_INVOKABLE void setStreamQuality(int quality);
   [[nodiscard]] QString deviceLabel() const;
   [[nodiscard]] QString broadcastStatus() const;
   [[nodiscard]] QStringList hosts() const;
@@ -106,6 +111,7 @@ class RoleController final : public QObject {
   void refreshCapabilities();
 
   RoleMode mode_{RoleMode::Remote};
+  int stream_quality_{};
   ControlledCapabilities controlled_capabilities_;
   RemoteCapabilities remote_capabilities_;
   QString failure_text_;

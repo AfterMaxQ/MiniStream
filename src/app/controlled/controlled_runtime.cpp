@@ -42,7 +42,12 @@ ControlledRuntime::ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
           last_gamepad_receive_.reset();
           return true;
         }
-        return backend_->inject_input(input);
+        if (!backend_->inject_input(input)) {
+          std::clog << "Remote input injection failed\n";
+        }
+        // This acknowledgement confirms ordered delivery. Injection failure is
+        // local to the controlled host and must not tear down the media session.
+        return true;
       }),
       confirmation_retrier_(timing_.confirmation_retry_interval) {
   advertisement_.controllable = false;
@@ -647,8 +652,8 @@ void ControlledRuntime::tick() {
   tick_confirmation_grace(now);
   send_heartbeat(now);
   send_pending_rumble();
-  send_pending_video(now);
   send_pending_audio(now);
+  send_pending_video(now);
   if (!scheduler_) {
     return;
   }

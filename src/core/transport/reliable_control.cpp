@@ -6,9 +6,9 @@
 
 namespace ministream {
 namespace {
-constexpr std::array<Microseconds, 3> kRetryDelays{
-    std::chrono::milliseconds{20}, std::chrono::milliseconds{40},
-    std::chrono::milliseconds{80}};
+constexpr std::array<Microseconds, 4> kRetryDelays{
+    std::chrono::milliseconds{50}, std::chrono::milliseconds{100},
+    std::chrono::milliseconds{200}, std::chrono::milliseconds{400}};
 }
 
 std::optional<ControlSeq> ReliableControl::send(

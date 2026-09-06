@@ -51,6 +51,29 @@ Item {
             elide: Text.ElideRight
         }
 
+        Row {
+            width: parent.width
+            spacing: Tokens.space12
+
+            Text {
+                width: 64
+                height: qualityPicker.height
+                text: "Quality"
+                color: Tokens.textMuted
+                font.pixelSize: 13
+                verticalAlignment: Text.AlignVCenter
+            }
+            ComboBox {
+                id: qualityPicker
+                width: parent.width - 64 - parent.spacing
+                model: root.controller.qualityOptions
+                currentIndex: root.controller.streamQuality
+                enabled: !root.controller.connecting && !root.controller.connected
+                         && !root.controller.pairing
+                onActivated: root.controller.setStreamQuality(currentIndex)
+            }
+        }
+
         SectionHeader { text: "Nearby devices · refreshes automatically" }
 
         Rectangle {

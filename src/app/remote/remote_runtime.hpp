@@ -4,6 +4,7 @@
 #include "core/audio/drift_controller.hpp"
 #include "core/audio/jitter_buffer.hpp"
 #include "core/audio/opus_codec.hpp"
+#include "core/config/stream_profile.hpp"
 #include "core/input/desktop_input.hpp"
 #include "core/input/gamepad_packet.hpp"
 #include "core/input/input_coalescer.hpp"
@@ -65,6 +66,7 @@ class RemoteRuntime {
   bool begin_discovery(Microseconds timeout = std::chrono::milliseconds{750});
   [[nodiscard]] const std::string& video_status() const noexcept { return video_status_; }
   bool connect(std::size_t index);
+  bool connect(std::size_t index, StreamProfileId profile);
   void confirm_pairing();
   void cancel_pairing();
   void toggle_input();
@@ -103,7 +105,7 @@ class RemoteRuntime {
   std::unique_ptr<MediaReceiver> media_receiver_;
   std::unique_ptr<SessionCrypto> crypto_;
   std::unique_ptr<OpusDecoder48kStereo> audio_decoder_;
-  AudioJitterBuffer audio_jitter_{{Microseconds{20'000}, Microseconds{60'000}}};
+  AudioJitterBuffer audio_jitter_{{Microseconds{30'000}, Microseconds{120'000}}};
   std::uint32_t expected_audio_sequence_{};
   bool audio_primed_{};
   unsigned missing_audio_frames_{};

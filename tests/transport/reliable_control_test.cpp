@@ -22,14 +22,16 @@ TEST_CASE("reliable control follows bounded retry deadlines") {
   const auto start = SteadyClock::time_point{};
   REQUIRE(control.send({0, ControlKind::RequestIdr, {}}, start) == ControlSeq{1});
 
-  REQUIRE(control.due_retries(start + 19ms).empty());
-  REQUIRE(control.due_retries(start + 20ms).size() == 1);
-  REQUIRE(control.due_retries(start + 59ms).empty());
-  REQUIRE(control.due_retries(start + 60ms).size() == 1);
-  REQUIRE(control.due_retries(start + 139ms).empty());
-  REQUIRE(control.due_retries(start + 140ms).size() == 1);
-  REQUIRE(control.due_retries(start + 219ms).empty());
-  REQUIRE(control.due_retries(start + 220ms).empty());
+  REQUIRE(control.due_retries(start + 49ms).empty());
+  REQUIRE(control.due_retries(start + 50ms).size() == 1);
+  REQUIRE(control.due_retries(start + 149ms).empty());
+  REQUIRE(control.due_retries(start + 150ms).size() == 1);
+  REQUIRE(control.due_retries(start + 349ms).empty());
+  REQUIRE(control.due_retries(start + 350ms).size() == 1);
+  REQUIRE(control.due_retries(start + 749ms).empty());
+  REQUIRE(control.due_retries(start + 750ms).size() == 1);
+  REQUIRE(control.due_retries(start + 1149ms).empty());
+  REQUIRE(control.due_retries(start + 1150ms).empty());
   REQUIRE(control.take_failures() == std::vector<ControlSeq>{1});
 }
 
