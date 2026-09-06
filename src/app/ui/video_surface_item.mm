@@ -51,7 +51,10 @@ struct MetalVideoNode final : QSGSimpleTextureNode {
     auto* descriptor = [MTLTextureDescriptor
         texture2DDescriptorWithPixelFormat:(hdr ? MTLPixelFormatRGBA16Float : MTLPixelFormatRGBA8Unorm)
         width:width height:height mipmapped:NO];
-    descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
+    // Core Image requires shader-write access for its conversion destination.
+    // Without it rendering fails and Qt samples an unwritten (magenta) texture.
+    descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite |
+                       MTLTextureUsageRenderTarget;
     descriptor.storageMode = MTLStorageModePrivate;
     id<MTLTexture> target = [device newTextureWithDescriptor:descriptor];
     CIImage* image = [CIImage imageWithCVPixelBuffer:buffer options:nil];
