@@ -28,7 +28,10 @@ struct MetalVideoNode final : QSGSimpleTextureNode {
   id<MTLTexture> native_texture{};
   std::unique_ptr<QSGTexture> texture_owner;
 
-  MetalVideoNode() { setFiltering(QSGTexture::Linear); }
+  MetalVideoNode() {
+    setFiltering(QSGTexture::Linear);
+    setTextureCoordinatesTransform(MirrorVertically);
+  }
   ~MetalVideoNode() override { texture_owner.reset(); }
 
   bool present(QQuickWindow* window, CVPixelBufferRef buffer) {
