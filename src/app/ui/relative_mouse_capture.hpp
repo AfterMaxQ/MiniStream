@@ -29,6 +29,9 @@ class RelativeMouseCapture : public QObject, public QAbstractNativeEventFilter {
   QPoint restore_position_;
   QPointF remainder_;
   bool active_{};
+#ifdef __APPLE__
+  bool mouse_coalescing_was_enabled_{true};
+#endif
 };
 
 }  // namespace ministream

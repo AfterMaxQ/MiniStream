@@ -63,6 +63,8 @@ void RelativeMouseCapture::setActive(bool active) {
       emit captureFailed();
       return;
     }
+    mouse_coalescing_was_enabled_ = [NSEvent isMouseCoalescingEnabled];
+    [NSEvent setMouseCoalescingEnabled:NO];
 #endif
     window_->setCursor(Qt::BlankCursor);
     remainder_ = {};
@@ -73,6 +75,7 @@ void RelativeMouseCapture::setActive(bool active) {
     RegisterRawInputDevices(&remove, 1, sizeof(remove));
 #elif defined(__APPLE__)
     CGAssociateMouseAndMouseCursorPosition(true);
+    [NSEvent setMouseCoalescingEnabled:mouse_coalescing_was_enabled_];
 #endif
     if (window_) window_->unsetCursor();
     QCursor::setPos(restore_position_);
