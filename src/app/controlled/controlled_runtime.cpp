@@ -128,6 +128,7 @@ void ControlledRuntime::stop() noexcept {
   if (backend_) {
     backend_->clear_input();
     backend_->clear_gamepad();
+    video_producer_.reset();
     backend_->stop();
   }
   scheduler_.reset();
@@ -286,6 +287,7 @@ void ControlledRuntime::finish_streaming(SteadyClock::time_point now) {
     return;
   }
   state_ = RoleState::Streaming;
+  video_producer_ = std::make_unique<VideoProducer>(*backend_, negotiated_bitrate_);
   reset_pairing();
   begin_confirmation_grace(now);
   last_authenticated_receive_ = now;
@@ -368,7 +370,7 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
         if (is_disconnect_control(*payload)) {
           clear_peer_session();
         } else if (is_request_keyframe_control(*payload) && backend_) {
-          backend_->request_keyframe();
+          if (video_producer_) video_producer_->request_keyframe();
           last_codec_config_send_.reset();
         }
       }
@@ -510,12 +512,8 @@ void ControlledRuntime::apply_feedback(const FeedbackReport& report) {
           delta.fec_unrecoverable, std::numeric_limits<std::uint32_t>::max()))};
   const auto decision = rate_controller_->update(feedback, SteadyClock::now());
   if (decision.bitrate_bps != encoder_bitrate_bps_) {
-    if (!backend_->reconfigure_bitrate(static_cast<std::uint32_t>(decision.bitrate_bps))) {
-      std::clog << "rate update rejected by encoder; keeping bitrate="
-                << encoder_bitrate_bps_ << '\n';
-      return;
-    }
-    encoder_bitrate_bps_ = decision.bitrate_bps;
+    if (video_producer_)
+      video_producer_->request_bitrate(static_cast<std::uint32_t>(decision.bitrate_bps));
   }
   current_fec_ratio_ = decision.fec_ratio;
   media_sender_->set_fec_ratio(current_fec_ratio_);
@@ -526,14 +524,15 @@ void ControlledRuntime::apply_feedback(const FeedbackReport& report) {
 }
 
 void ControlledRuntime::send_pending_video(SteadyClock::time_point now) {
-  if (!media_sender_ || !session_ || !crypto_ || !backend_) {
+  if (!media_sender_ || !session_ || !crypto_ || !video_producer_) {
     return;
   }
-  const auto started = SteadyClock::now();
-  const auto frame = backend_->next_video();
-  // Capturing/encoding may take longer than a packet's queue deadline.
+  const auto frame = video_producer_->take();
   now = SteadyClock::now();
-  const auto config = backend_->codec_config();
+  encoder_bitrate_bps_ = video_producer_->bitrate();
+  const auto wire_rate = required_video_wire_rate(encoder_bitrate_bps_, current_fec_ratio_);
+  if (wire_rate != scheduler_->video_rate_bps()) scheduler_->set_video_rate(wire_rate);
+  const auto config = video_producer_->config();
   if (!config.parameter_sets.empty()) {
     constexpr auto kCodecConfigRetryInterval = std::chrono::milliseconds{500};
     const bool changed = !last_codec_config_sent_ || *last_codec_config_sent_ != config;
@@ -552,8 +551,8 @@ void ControlledRuntime::send_pending_video(SteadyClock::time_point now) {
   }
   if (frame) {
     ++video_stats_frames_;
-    video_stats_work_ms_ += std::chrono::duration<double, std::milli>(now - started).count();
-    if (media_sender_->enqueue_video(*frame, now) == 0) backend_->request_keyframe();
+    video_stats_work_ms_ += frame->work_ms;
+    if (media_sender_->enqueue_video(frame->frame, now) == 0) video_producer_->request_keyframe();
   }
 }
 
@@ -763,6 +762,7 @@ void ControlledRuntime::clear_peer_session() noexcept {
     backend_->clear_input();
     backend_->clear_gamepad();
   }
+  video_producer_.reset();
   scheduler_.reset();
   media_sender_.reset();
   crypto_.reset();

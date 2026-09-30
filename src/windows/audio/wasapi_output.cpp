@@ -81,6 +81,18 @@ Result<void, AudioOutputError> WasapiOutput::push(std::span<const float> samples
     impl_->pending.erase(impl_->pending.begin(), impl_->pending.begin() + dropped);
   }
   impl_->pending.insert(impl_->pending.end(), samples.begin(), samples.end());
+  return flush();
+}
+
+std::optional<AudioPlaybackStatus> WasapiOutput::status() const {
+  if (!impl_->started) return std::nullopt;
+  UINT padding{};
+  if (FAILED(impl_->client->GetCurrentPadding(&padding))) return std::nullopt;
+  return AudioPlaybackStatus{padding + impl_->pending.size() / 2U, 0};
+}
+
+Result<void, AudioOutputError> WasapiOutput::flush() {
+  if (!impl_->started) return Result<void, AudioOutputError>::err(AudioOutputError::Stopped);
 
   UINT padding{};
   if (FAILED(impl_->client->GetCurrentPadding(&padding))) {

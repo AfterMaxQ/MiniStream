@@ -205,46 +205,48 @@ bool MacControlledBackend::reconfigure_bitrate(std::uint32_t bitrate_bps) {
 }
 
 std::optional<EncodedFrame> MacControlledBackend::next_video() {
-  if (!impl_->started || !impl_->capture || !impl_->encoder) return std::nullopt;
-  const auto captured = impl_->capture->take_latest();
-  if (captured) {
-    if (impl_->last_capture.pixel_buffer) CVPixelBufferRelease(impl_->last_capture.pixel_buffer);
-    impl_->last_capture = *captured;
-    impl_->capture_dirty = true;
-  }
-  const auto now = SteadyClock::now();
-  const auto drain = [&]() { return impl_->encoder->take_next(); };
-  if (!impl_->last_capture.pixel_buffer ||
-      (!impl_->capture_dirty && !impl_->keyframe_pending) ||
-      (impl_->next_capture_at && now < *impl_->next_capture_at)) return drain();
-  const auto& source = impl_->last_capture;
-  if (!impl_->encoder->ready()) {
-    const auto profile = stream_profile(StreamProfileId::Debug1080);
-    const auto codec = impl_->configured ? impl_->requested.codec : profile.codec;
-    const auto fps = impl_->configured ? impl_->requested.fps : profile.fps;
-    const auto bitrate = impl_->bitrate_bps != 0
-                             ? impl_->bitrate_bps
-                             : static_cast<std::uint32_t>(profile.initial_bitrate_bps);
-    const auto width = impl_->configured ? impl_->requested.width : source.width;
-    const auto height = impl_->configured ? impl_->requested.height : source.height;
-    if (!impl_->encoder->start({codec, width, height, fps, bitrate, impl_->requested.hdr10})) {
-      return std::nullopt;
+  @autoreleasepool {
+    if (!impl_->started || !impl_->capture || !impl_->encoder) return std::nullopt;
+    const auto captured = impl_->capture->take_latest();
+    if (captured) {
+      if (impl_->last_capture.pixel_buffer) CVPixelBufferRelease(impl_->last_capture.pixel_buffer);
+      impl_->last_capture = *captured;
+      impl_->capture_dirty = true;
     }
+    const auto now = SteadyClock::now();
+    const auto drain = [&]() { return impl_->encoder->take_next(); };
+    if (!impl_->last_capture.pixel_buffer ||
+        (!impl_->capture_dirty && !impl_->keyframe_pending) ||
+        (impl_->next_capture_at && now < *impl_->next_capture_at)) return drain();
+    const auto& source = impl_->last_capture;
+    if (!impl_->encoder->ready()) {
+      const auto profile = stream_profile(StreamProfileId::Debug1080);
+      const auto codec = impl_->configured ? impl_->requested.codec : profile.codec;
+      const auto fps = impl_->configured ? impl_->requested.fps : profile.fps;
+      const auto bitrate = impl_->bitrate_bps != 0
+                               ? impl_->bitrate_bps
+                               : static_cast<std::uint32_t>(profile.initial_bitrate_bps);
+      const auto width = impl_->configured ? impl_->requested.width : source.width;
+      const auto height = impl_->configured ? impl_->requested.height : source.height;
+      if (!impl_->encoder->start({codec, width, height, fps, bitrate, impl_->requested.hdr10})) {
+        return std::nullopt;
+      }
+      impl_->active = impl_->encoder->codec_config();
+    }
+    const auto timestamp = impl_->capture_dirty ? source.timestamp_us :
+        static_cast<std::uint64_t>(std::chrono::duration_cast<Microseconds>(now.time_since_epoch()).count());
+    const auto submitted = impl_->encoder->submit(source.pixel_buffer, timestamp, impl_->keyframe_pending);
+    if (!submitted) return drain();
+    impl_->capture_dirty = impl_->keyframe_pending = false;
+    const auto fps = impl_->configured ? impl_->requested.fps : 60U;
+    const auto interval = Microseconds{1'000'000 / std::max(1U, fps)};
+    impl_->next_capture_at = impl_->next_capture_at.value_or(now) + interval;
+    if (*impl_->next_capture_at <= now) impl_->next_capture_at = now + interval;
+    const auto encoded = impl_->encoder->take_next();
+    if (!encoded) return std::nullopt;
     impl_->active = impl_->encoder->codec_config();
+    return *encoded;
   }
-  const auto timestamp = impl_->capture_dirty ? source.timestamp_us :
-      static_cast<std::uint64_t>(std::chrono::duration_cast<Microseconds>(now.time_since_epoch()).count());
-  const auto submitted = impl_->encoder->submit(source.pixel_buffer, timestamp, impl_->keyframe_pending);
-  if (!submitted) return drain();
-  impl_->capture_dirty = impl_->keyframe_pending = false;
-  const auto fps = impl_->configured ? impl_->requested.fps : 60U;
-  const auto interval = Microseconds{1'000'000 / std::max(1U, fps)};
-  impl_->next_capture_at = impl_->next_capture_at.value_or(now) + interval;
-  if (*impl_->next_capture_at <= now) impl_->next_capture_at = now + interval;
-  const auto encoded = impl_->encoder->take_next();
-  if (!encoded) return std::nullopt;
-  impl_->active = impl_->encoder->codec_config();
-  return *encoded;
 }
 
 CodecConfig MacControlledBackend::codec_config() const {

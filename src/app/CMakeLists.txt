@@ -2,6 +2,7 @@ add_library(
   ministream_app
   STATIC
   controlled/controlled_runtime.cpp
+  controlled/video_producer.cpp
   remote/remote_runtime.cpp
 )
 

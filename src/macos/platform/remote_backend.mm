@@ -109,6 +109,12 @@ bool MacRemoteBackend::play_audio(std::span<const float> samples) {
   return impl_->started && impl_->audio && impl_->audio->push(samples);
 }
 
+std::optional<AudioPlaybackStatus> MacRemoteBackend::audio_playback_status() const {
+  if (!impl_->started || !impl_->audio) return std::nullopt;
+  const auto stats = impl_->audio->stats();
+  return AudioPlaybackStatus{stats.buffered_frames, stats.underruns};
+}
+
 void MacRemoteBackend::play_rumble(std::uint16_t low, std::uint16_t high,
                                    std::uint32_t duration_ms) {
   if (impl_->gamepad) {

@@ -31,6 +31,7 @@ Item {
         target: root.controller
         function onStateChanged() {
             if (root.wasRemote && !root.controller.remoteInputActive) root.toolbarOpen = true
+            if (!root.wasRemote && root.controller.remoteInputActive) root.toolbarOpen = false
             root.wasRemote = root.controller.remoteInputActive
             if (root.routing) root.forceActiveFocus()
         }
@@ -75,52 +76,35 @@ Item {
         preventStealing: true
         cursorShape: root.routing ? Qt.BlankCursor : Qt.ArrowCursor
         function positionRemote(x, y) {
-            if (root.gameMouse || !root.routing) return
+            if (root.gameMouse) return true
+            if (!root.routing) return false
             const fw = Math.min(width, height * nativeVideo.aspectRatio)
             const fh = fw / nativeVideo.aspectRatio
             const left = (width - fw) / 2
             const top = (height - fh) / 2
-            if (fw <= 0 || fh <= 0 || x < left || x > left + fw || y < top || y > top + fh) return
+            if (fw <= 0 || fh <= 0 || x < left || x > left + fw || y < top || y > top + fh) return false
             root.controller.routeMousePosition(Math.round((x - left) / fw * 65535),
                                                Math.round((y - top) / fh * 65535))
+            return true
         }
         onPositionChanged: function(mouse) { positionRemote(mouse.x, mouse.y) }
         onPressed: function(mouse) {
             root.forceActiveFocus()
-            positionRemote(mouse.x, mouse.y)
-            root.controller.routeMouseButton(mouse.button, true)
+            if (positionRemote(mouse.x, mouse.y)) root.controller.routeMouseButton(mouse.button, true)
         }
         onReleased: function(mouse) { root.controller.routeMouseButton(mouse.button, false) }
         onCanceled: root.controller.releaseRemoteInput()
         onWheel: function(wheel) { root.controller.routeMouseWheel(wheel.angleDelta.y) }
     }
 
-    Item {
+    AppButton {
+        z: 6
         anchors.top: parent.top
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: Math.min(parent.width, 560)
-        height: 18
-        visible: root.visible && !relativeMouse.active
-        HoverHandler { id: topHover }
-        Rectangle {
-            anchors.top: parent.top
-            anchors.topMargin: 4
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: 48; height: 3; radius: 2
-            color: Tokens.text
-            opacity: root.toolbarOpen ? 0 : (topHover.hovered ? 0.8 : 0.22)
-            Behavior on opacity { NumberAnimation { duration: 140 } }
-        }
-    }
-    Timer {
-        interval: 600
-        running: topHover.hovered && !root.toolbarOpen && remoteMouse.pressedButtons === Qt.NoButton
-        onTriggered: root.showControls()
-    }
-    Timer {
-        interval: 1800
-        running: root.visible && root.toolbarOpen && !toolbarHover.hovered && !topHover.hovered
-        onTriggered: root.toolbarOpen = false
+        anchors.right: parent.right
+        anchors.margins: 12
+        visible: root.visible && !root.toolbarOpen && !relativeMouse.active
+        text: "Use this device"
+        onClicked: root.showControls()
     }
     Rectangle {
         id: toolbar
@@ -137,7 +121,6 @@ Item {
         border.color: Tokens.border
         Behavior on y { NumberAnimation { duration: 170; easing.type: Easing.OutCubic } }
         Behavior on opacity { NumberAnimation { duration: 140 } }
-        HoverHandler { id: toolbarHover }
         Column {
             id: toolbarContent
             anchors.left: parent.left
@@ -157,7 +140,7 @@ Item {
                 width: parent.width
                 spacing: 8
                 AppButton {
-                    text: "Resume control"
+                    text: "Control remote"
                     onClicked: root.resumeControl()
                 }
                 AppButton {
@@ -175,7 +158,7 @@ Item {
             }
             Text {
                 width: parent.width
-                text: (root.gameMouse ? "Game mouse locks the cursor. " : "Hover at the top for controls. ")
+                text: (root.gameMouse ? "Game mouse locks the cursor. " : "Use this device opens controls. ")
                       + root.releaseShortcut + " releases all input."
                 color: Tokens.textMuted
                 font.pixelSize: 12
@@ -191,14 +174,13 @@ Item {
         height: 42
         radius: 21
         color: "#e022252b"
-        visible: !root.toolbarOpen && !root.controller.remoteInputActive
+        visible: !root.toolbarOpen && root.gameMouse
         Text {
             id: localHint
             anchors.centerIn: parent
-            text: "Input is local · Click to control remote"
+            text: root.releaseShortcut + " · Use this device"
             color: Tokens.text
             font.pixelSize: 14
         }
-        MouseArea { anchors.fill: parent; onClicked: root.resumeControl() }
     }
 }

@@ -18,6 +18,7 @@
 #include "core/telemetry/feedback_wire.hpp"
 #include "core/telemetry/stream_aggregator.hpp"
 #include "platform/controlled_backend.hpp"
+#include "app/controlled/video_producer.hpp"
 
 #include <cstdint>
 #include <deque>
@@ -79,6 +80,7 @@ class ControlledRuntime {
   void send_input_ack(ControlSeq sequence);
 
   std::unique_ptr<ControlledBackend> backend_;
+  std::unique_ptr<VideoProducer> video_producer_;
   DiscoveryAdvertisement advertisement_;
   DiscoveryConfig discovery_config_;
   SessionTiming timing_;

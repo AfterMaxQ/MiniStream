@@ -12,6 +12,11 @@
 
 namespace ministream {
 
+struct AudioPlaybackStatus {
+  std::size_t buffered_frames{};
+  std::uint64_t underruns{};
+};
+
 class RemoteBackend {
  public:
   virtual ~RemoteBackend() = default;
@@ -24,6 +29,7 @@ class RemoteBackend {
   virtual bool decode_video(std::span<const std::byte> encoded,
                             std::uint64_t timestamp_us) = 0;
   virtual bool play_audio(std::span<const float> interleaved_stereo) = 0;
+  [[nodiscard]] virtual std::optional<AudioPlaybackStatus> audio_playback_status() const { return std::nullopt; }
   virtual void play_rumble(std::uint16_t low, std::uint16_t high,
                            std::uint32_t duration_ms) = 0;
   virtual void clear_rumble() noexcept {}

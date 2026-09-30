@@ -107,6 +107,8 @@ class RemoteRuntime {
   std::unique_ptr<SessionCrypto> crypto_;
   std::unique_ptr<OpusDecoder48kStereo> audio_decoder_;
   AudioJitterBuffer audio_jitter_{{Microseconds{30'000}, Microseconds{120'000}}};
+  DriftController audio_drift_;
+  StereoClockResampler audio_resampler_;
   std::uint32_t expected_audio_sequence_{};
   bool audio_primed_{};
   unsigned missing_audio_frames_{};

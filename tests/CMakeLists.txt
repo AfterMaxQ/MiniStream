@@ -43,6 +43,7 @@ add_executable(
   video/codec_config_wire_test.cpp
   session/discovery_test.cpp
   session/controlled_runtime_test.cpp
+  session/video_producer_test.cpp
   session/remote_runtime_test.cpp
   security/pairing_wire_test.cpp
   integration/remote_control_integration_test.cpp
@@ -88,6 +89,10 @@ if(APPLE)
 endif()
 
 include(Catch)
+if(MINISTREAM_BUILD_UI)
+  target_sources(ministream_tests PRIVATE ui/control_escape_filter_test.cpp)
+  target_link_libraries(ministream_tests PRIVATE Qt6::Gui)
+endif()
 catch_discover_tests(ministream_tests)
 
 if(APPLE)

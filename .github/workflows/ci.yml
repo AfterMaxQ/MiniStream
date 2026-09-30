@@ -36,7 +36,7 @@ jobs:
           python tests/packaging/version_contract_test.py
 
   macos:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -56,12 +56,13 @@ jobs:
         run: |
           SODIUM_PREFIX="$(brew --prefix libsodium)"
           cmake -S . -B build -G Xcode \
-            -DMINISTREAM_BUILD_UI=OFF \
+            -DMINISTREAM_BUILD_UI=ON \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
             -DMINISTREAM_BUILD_TOOLS=OFF \
             -DMINISTREAM_BUILD_TESTS=ON \
             -DMINISTREAM_SODIUM_INCLUDE_DIR="$SODIUM_PREFIX/include" \
             -DMINISTREAM_SODIUM_LIBRARY="$SODIUM_PREFIX/lib/libsodium.dylib"
-      - name: Build tests
-        run: cmake --build build --config Release --target ministream_tests --parallel 4
+      - name: Build app and tests
+        run: cmake --build build --config Release --target ministream_tests ministream --parallel 4
       - name: Run C++ tests
         run: ctest --test-dir build -C Release --output-on-failure

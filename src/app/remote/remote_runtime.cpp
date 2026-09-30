@@ -688,40 +688,57 @@ void RemoteRuntime::play_audio(SteadyClock::time_point now) {
     expected_audio_sequence_ = *audio_jitter_.first_sequence();
     missing_audio_frames_ = 0;
     audio_decoder_->reset();
+    audio_resampler_.reset();
     next_audio_playout_ = now;
   }
-  if (!next_audio_playout_ || now < *next_audio_playout_) {
+  auto playback = backend_->audio_playback_status();
+  if (!next_audio_playout_ || (!playback && now < *next_audio_playout_)) {
     return;
   }
 
   constexpr auto kAudioPlayoutInterval = std::chrono::milliseconds{10};
   constexpr unsigned kMaxCatchUpFrames = 4;
   unsigned frames{};
-  while (frames < kMaxCatchUpFrames && now >= *next_audio_playout_) {
+  // Follow the DAC queue rather than assuming its 48 kHz clock exactly matches
+  // the host clock. Keep 20 ms ready for native callbacks; legacy backends
+  // without queue measurements use the wall-clock pacing path.
+  const auto due = [&] {
+    playback = backend_->audio_playback_status();
+    return playback ? playback->buffered_frames < 960U : now >= *next_audio_playout_;
+  };
+  while (frames < kMaxCatchUpFrames && due()) {
     if (const auto first = audio_jitter_.first_sequence(); first &&
         static_cast<std::int32_t>(*first - expected_audio_sequence_) > 2) {
       // Catch up to live audio after a queue overflow or a delayed UI tick.
       expected_audio_sequence_ = *first;
       audio_decoder_->reset();
+      audio_resampler_.reset();
     }
+    const auto ratio = playback
+        ? audio_drift_.update(audio_jitter_.buffered_duration() - Microseconds{30'000}).resample_ratio
+        : 1.0;
+    const auto play = [&](const std::vector<float>& samples) {
+      const auto corrected = audio_resampler_.process(samples, ratio);
+      return corrected.empty() || backend_->play_audio(corrected);
+    };
     const auto playout = audio_jitter_.pop(expected_audio_sequence_);
     bool decoded = false;
     if (playout.kind == AudioPlayoutKind::Packet && playout.packet) {
       if (const auto samples = audio_decoder_->decode(playout.packet->opus); samples) {
-        backend_->play_audio(*samples);
-        decoded = true;
+        decoded = play(*samples);
       }
     }
     if (decoded) {
       missing_audio_frames_ = 0;
     } else {
-      if (const auto samples = audio_decoder_->decode_loss(); samples) backend_->play_audio(*samples);
+      if (const auto samples = audio_decoder_->decode_loss(); samples) (void)play(*samples);
       if (++missing_audio_frames_ >= 3) {
         // Loopback sources may stop producing packets during silence. Re-prime
         // from the next received sequence instead of advancing PLC forever.
         audio_primed_ = false;
         audio_jitter_ = AudioJitterBuffer{{Microseconds{30'000}, Microseconds{120'000}}};
         next_audio_playout_.reset();
+        audio_resampler_.reset();
         return;
       }
     }
@@ -729,7 +746,7 @@ void RemoteRuntime::play_audio(SteadyClock::time_point now) {
     *next_audio_playout_ += kAudioPlayoutInterval;
     ++frames;
   }
-  if (now >= *next_audio_playout_) {
+  if (!playback && now >= *next_audio_playout_) {
     *next_audio_playout_ = now + kAudioPlayoutInterval;
   }
 }

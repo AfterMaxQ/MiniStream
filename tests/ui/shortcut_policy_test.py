@@ -17,6 +17,14 @@ def test_client_shortcuts_leave_game_keys_in_remote_mode() -> None:
     assert 'sequence: "Ctrl+Shift+F12"' not in source
     assert source.count("enabled: !roleController.remoteInputActive") >= 2
 
+def test_stream_control_changes_only_on_explicit_user_action() -> None:
+    source = (UI_ROOT / "pages" / "StreamPage.qml").read_text(encoding="utf-8")
+    assert "running: topHover.hovered" not in source
+    assert 'text: "Use this device"' in source
+    assert "onTriggered: root.toolbarOpen = false" not in source
+
+
 if __name__ == "__main__":
     test_client_shortcuts_leave_game_keys_in_remote_mode()
+    test_stream_control_changes_only_on_explicit_user_action()
     print("Shortcut policy check passed")

@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <atomic>
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -73,6 +74,11 @@ class LoopbackControlledBackend final : public ControlledBackend {
     if (!started) {
       return std::nullopt;
     }
+    if (slow_video.load()) {
+      encoding.store(true);
+      std::this_thread::sleep_for(120ms);
+      encoding.store(false);
+    }
     const auto id = video_id++;
     return EncodedFrame{id, 10'000U + id, (id % 30U) == 0U,
                         {std::byte{0x00}, std::byte{0x00}, std::byte{0x01},
@@ -121,7 +127,9 @@ class LoopbackControlledBackend final : public ControlledBackend {
   bool started{};
   std::uint32_t video_id{};
   std::uint32_t audio_id{};
-  std::uint32_t bitrate{};
+  std::atomic<std::uint32_t> bitrate{};
+  std::atomic<bool> slow_video{};
+  std::atomic<bool> encoding{};
   std::optional<CodecConfig> configured;
   std::vector<DesktopInput> injected_inputs;
   bool reject_first_input{};
@@ -289,6 +297,13 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
   REQUIRE(controlled.streaming());
   REQUIRE(remote_backend_ptr->configured.has_value());
   REQUIRE(controlled_backend_ptr->bitrate == 8'000'000);
+
+  // An overloaded GPU must not stall the input/audio/session thread.
+  controlled_backend_ptr->slow_video = true;
+  const auto tick_started = SteadyClock::now();
+  controlled.tick();
+  REQUIRE(SteadyClock::now() - tick_started < 60ms);
+  controlled_backend_ptr->slow_video = false;
 
   remote.toggle_input();
   REQUIRE(remote.remote_input_active());

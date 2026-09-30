@@ -1,4 +1,5 @@
 #include "app/ui/role_controller.hpp"
+#include "app/ui/control_escape_filter.hpp"
 
 #include "app/controlled/controlled_runtime.hpp"
 #include "app/remote/remote_runtime.hpp"
@@ -139,6 +140,8 @@ std::shared_ptr<PairingTrust> load_pairing_trust() {
 }  // namespace
 
 RoleController::RoleController(QObject* parent) : QObject(parent) {
+  new ControlEscapeFilter([this] { return remoteInputActive(); },
+                          [this] { releaseRemoteInput(); }, this);
   pairing_trust_ = load_pairing_trust();
 #ifdef _WIN32
   auto controlled_backend = std::make_unique<WindowsControlledBackend>();

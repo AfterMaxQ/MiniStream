@@ -109,6 +109,10 @@ bool WindowsRemoteBackend::play_audio(std::span<const float> interleaved_stereo)
   return impl_->started && impl_->audio && impl_->audio->push(interleaved_stereo);
 }
 
+std::optional<AudioPlaybackStatus> WindowsRemoteBackend::audio_playback_status() const {
+  return impl_->started && impl_->audio ? impl_->audio->status() : std::nullopt;
+}
+
 void WindowsRemoteBackend::play_rumble(std::uint16_t low, std::uint16_t high,
                                        std::uint32_t duration_ms) {
   if (duration_ms == 0) {
@@ -131,6 +135,7 @@ void WindowsRemoteBackend::clear_rumble() noexcept {
 }
 
 void WindowsRemoteBackend::tick(SteadyClock::time_point now) noexcept {
+  if (impl_ && impl_->started && impl_->audio) (void)impl_->audio->flush();
   if (impl_ && impl_->rumble_deadline && now >= *impl_->rumble_deadline) {
     clear_rumble();
   }

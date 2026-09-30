@@ -26,6 +26,7 @@ class WindowsRemoteBackend final : public RemoteBackend {
   bool decode_video(std::span<const std::byte> encoded,
                     std::uint64_t timestamp_us) override;
   bool play_audio(std::span<const float> interleaved_stereo) override;
+  std::optional<AudioPlaybackStatus> audio_playback_status() const override;
   void play_rumble(std::uint16_t low, std::uint16_t high,
                    std::uint32_t duration_ms) override;
   void clear_rumble() noexcept override;

@@ -66,12 +66,17 @@ TEST_CASE("remote runtime starts browsing and stops its backend cleanly") {
 }
 
 TEST_CASE("remote discovery starts asynchronously and reports an empty completion") {
+  UdpEndpoint silent_endpoint;
+  REQUIRE(silent_endpoint.bind(0));
+  DiscoveryConfig discovery_config;
+  discovery_config.port = silent_endpoint.local_port();
+  discovery_config.target_override = {{127, 0, 0, 1}};
   auto provider = [] {
     return std::vector<DiscoveryInterface>{{"en0", {192, 168, 1, 20},
                                             {255, 255, 255, 0}, true, false}};
   };
   auto backend = std::make_unique<FakeRemoteBackend>(ready_capabilities());
-  RemoteRuntime runtime(std::move(backend), {}, provider);
+  RemoteRuntime runtime(std::move(backend), discovery_config, provider);
   REQUIRE(runtime.start());
 
   const auto begin = SteadyClock::now();

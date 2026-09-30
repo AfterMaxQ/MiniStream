@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <optional>
+#include "platform/remote_backend.hpp"
 
 namespace ministream {
 
@@ -23,6 +25,8 @@ class WasapiOutput {
   Result<void, AudioOutputError> push(std::span<const float> interleaved_stereo);
   void stop() noexcept;
   [[nodiscard]] bool started() const noexcept;
+  Result<void, AudioOutputError> flush();
+  std::optional<AudioPlaybackStatus> status() const;
 
  private:
   struct Impl;

@@ -9,8 +9,11 @@ def test_ci_builds_and_tests_both_desktop_platforms() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
 
     assert "runs-on: windows-2022" in source
-    assert "runs-on: macos-14" in source
-    assert source.count("MINISTREAM_BUILD_UI=OFF") == 2
+    assert "runs-on: macos-15" in source
+    assert source.count("MINISTREAM_BUILD_UI=OFF") == 1
+    assert source.count("MINISTREAM_BUILD_UI=ON") == 1
+    assert "CMAKE_OSX_DEPLOYMENT_TARGET=15.0" in source
+    assert "--target ministream_tests ministream" in source
     assert source.count("--target ministream_tests") == 2
     assert source.count("ctest --test-dir build") == 2
     assert "jurplel/install-qt-action@v4" in source
