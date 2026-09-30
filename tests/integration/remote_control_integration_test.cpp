@@ -295,6 +295,8 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
   }
   REQUIRE(remote.streaming());
   REQUIRE(controlled.streaming());
+  for (unsigned attempt = 0; attempt < 750U && !remote_backend_ptr->configured; ++attempt)
+    pump(controlled, remote);
   REQUIRE(remote_backend_ptr->configured.has_value());
   REQUIRE(controlled_backend_ptr->bitrate == 8'000'000);
 
