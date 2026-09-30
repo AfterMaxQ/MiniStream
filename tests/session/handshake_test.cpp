@@ -1,5 +1,6 @@
 #include "core/session/handshake.hpp"
 #include "core/session/session_timing.hpp"
+#include "core/protocol/wire.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,7 +14,7 @@ TEST_CASE("handshake messages have deterministic validated wire formats") {
                     50'000'000, 0x0102030405060708ULL};
   auto encoded_hello = encode_hello(hello);
   REQUIRE(encoded_hello.size() == 23);
-  REQUIRE(encoded_hello[0] == std::byte{2});
+  REQUIRE(encoded_hello[0] == std::byte{kProtocolVersion});
   REQUIRE(encoded_hello[1] == std::byte{1});
   REQUIRE(decode_hello(encoded_hello) == hello);
 
@@ -21,7 +22,7 @@ TEST_CASE("handshake messages have deterministic validated wire formats") {
                       50'000'000, hello.nonce};
   const auto encoded_accept = encode_accept(accept);
   REQUIRE(encoded_accept.size() == 27);
-  REQUIRE(encoded_accept[0] == std::byte{2});
+  REQUIRE(encoded_accept[0] == std::byte{kProtocolVersion});
   REQUIRE(encoded_accept[1] == std::byte{2});
   REQUIRE(decode_accept(encoded_accept) == accept);
 

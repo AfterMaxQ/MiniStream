@@ -20,6 +20,7 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QGuiApplication>
+#include <QSettings>
 
 #include <algorithm>
 #include <string>
@@ -100,19 +101,57 @@ QString first_line(const std::string& card) {
   return QString::fromStdString(card.substr(0, end));
 }
 
+std::shared_ptr<PairingTrust> load_pairing_trust() {
+  auto settings = std::make_shared<QSettings>(QSettings::NativeFormat, QSettings::UserScope,
+                                             QStringLiteral("AfterMaxQ"), QStringLiteral("MiniStream"));
+  const auto saved_seed = settings->value(QStringLiteral("pairing/identitySeed")).toByteArray();
+  auto identity = saved_seed.isEmpty() ? generate_identity()
+      : identity_from_seed({reinterpret_cast<const std::byte*>(saved_seed.constData()),
+                            static_cast<std::size_t>(saved_seed.size())});
+  if (!identity) return {};
+  if (saved_seed.isEmpty()) {
+    settings->setValue(QStringLiteral("pairing/identitySeed"),
+        QByteArray(reinterpret_cast<const char*>(identity->secret_key.data()), 32));
+    settings->sync();
+    if (settings->status() != QSettings::NoError) return {};
+  }
+  std::vector<PairingTrust::PublicKey> peers;
+  const auto saved_peers = settings->value(QStringLiteral("pairing/trustedDevices")).toStringList();
+  for (const auto& value : saved_peers) {
+    const auto bytes = QByteArray::fromHex(value.toLatin1());
+    if (value.size() != 64 || bytes.size() != 32 || peers.size() >= 256) continue;
+    PairingTrust::PublicKey key{};
+    std::copy_n(reinterpret_cast<const std::byte*>(bytes.constData()), key.size(), key.begin());
+    peers.push_back(key);
+  }
+  return std::make_shared<PairingTrust>(*identity, std::move(peers),
+      [settings](const std::vector<PairingTrust::PublicKey>& updated) {
+        QStringList values;
+        for (const auto& key : updated)
+          values.push_back(QString::fromLatin1(
+              QByteArray(reinterpret_cast<const char*>(key.data()), 32).toHex()));
+        settings->setValue(QStringLiteral("pairing/trustedDevices"), values);
+        settings->sync();
+        return settings->status() == QSettings::NoError;
+      });
+}
+
 }  // namespace
 
 RoleController::RoleController(QObject* parent) : QObject(parent) {
+  pairing_trust_ = load_pairing_trust();
 #ifdef _WIN32
   auto controlled_backend = std::make_unique<WindowsControlledBackend>();
   controlled_capabilities_ = controlled_backend->inspect();
   controlled_ = std::make_unique<ControlledRuntime>(
-      std::move(controlled_backend), controlled_advertisement(controlled_capabilities_));
+      std::move(controlled_backend), controlled_advertisement(controlled_capabilities_),
+      DiscoveryConfig{}, SessionTiming{}, pairing_trust_);
 
   auto remote_backend = std::make_unique<WindowsRemoteBackend>();
   auto* remote_backend_ptr = remote_backend.get();
   remote_capabilities_ = remote_backend->inspect();
-  remote_ = std::make_unique<RemoteRuntime>(std::move(remote_backend));
+  remote_ = std::make_unique<RemoteRuntime>(std::move(remote_backend), DiscoveryConfig{},
+      DiscoveryInterfaceProvider{}, SessionTiming{}, pairing_trust_);
   video_surface_ = std::make_unique<WindowsVideoSurfaceBridge>(remote_backend_ptr);
   mode_ = RoleMode::Controlled;
 #endif
@@ -121,11 +160,13 @@ RoleController::RoleController(QObject* parent) : QObject(parent) {
   auto controlled_backend = std::make_unique<MacControlledBackend>();
   controlled_capabilities_ = controlled_backend->inspect();
   controlled_ = std::make_unique<ControlledRuntime>(
-      std::move(controlled_backend), controlled_advertisement(controlled_capabilities_));
+      std::move(controlled_backend), controlled_advertisement(controlled_capabilities_),
+      DiscoveryConfig{}, SessionTiming{}, pairing_trust_);
   auto* video_surface = static_cast<VideoSurfaceBridge*>(video_surface_.get());
   auto remote_backend = std::make_unique<MacRemoteBackend>(video_surface);
   remote_capabilities_ = remote_backend->inspect();
-  remote_ = std::make_unique<RemoteRuntime>(std::move(remote_backend));
+  remote_ = std::make_unique<RemoteRuntime>(std::move(remote_backend), DiscoveryConfig{},
+      DiscoveryInterfaceProvider{}, SessionTiming{}, pairing_trust_);
   mode_ = RoleMode::Remote;
 #endif
 
@@ -193,6 +234,7 @@ bool RoleController::remoteAvailable() const noexcept {
 }
 
 bool RoleController::ready() const noexcept {
+  if (!pairing_trust_) return false;
   if (mode_ == RoleMode::Controlled) {
     return controlled_capabilities_.ready();
   }
@@ -388,6 +430,7 @@ QString RoleController::selectedDeviceLabel() const {
 }
 
 QString RoleController::statusText() const {
+  if (!pairing_trust_) return QStringLiteral("Could not load or save pairing settings.");
   if (!failure_text_.isEmpty()) {
     return failure_text_;
   }
@@ -412,7 +455,7 @@ QString RoleController::statusText() const {
                            : QStringLiteral("Connecting to %1").arg(label);
   }
   if (pairing()) {
-    return QStringLiteral("Confirm the same code on both devices.");
+    return QStringLiteral("Enter this code once on the device you want to control.");
   }
   if (connected()) {
     return QStringLiteral("Connected");
@@ -501,6 +544,7 @@ QObject* RoleController::videoSurface() const noexcept {
 }
 
 void RoleController::startBroadcast() {
+  if (!pairing_trust_) { emit stateChanged(); return; }
 #if defined(_WIN32) || defined(__APPLE__)
   if (mode_ != RoleMode::Controlled || !controlled_) {
     return;
@@ -572,6 +616,7 @@ void RoleController::findDevices() {
 }
 
 void RoleController::connectToDevice(int index) {
+  if (!pairing_trust_) { emit stateChanged(); return; }
   const auto profile = static_cast<StreamProfileId>(stream_quality_);
 #ifdef _WIN32
   if (mode_ == RoleMode::Remote && remote_) {
@@ -596,20 +641,24 @@ void RoleController::connectToDevice(int index) {
 #endif
 }
 
-void RoleController::confirmPairing() {
-#ifdef _WIN32
+int RoleController::pairedDeviceCount() const noexcept {
+  return pairing_trust_ ? static_cast<int>(pairing_trust_->size()) : 0;
+}
+
+bool RoleController::pairWithCode(const QString& code) {
+#if defined(_WIN32) || defined(__APPLE__)
   if (mode_ == RoleMode::Controlled && controlled_) {
-    controlled_->confirm_pairing();
-  } else if (mode_ == RoleMode::Remote && remote_) {
-    remote_->confirm_pairing();
-  }
-#elif defined(__APPLE__)
-  if (mode_ == RoleMode::Controlled && controlled_) {
-    controlled_->confirm_pairing();
-  } else if (mode_ == RoleMode::Remote && remote_) {
-    remote_->confirm_pairing();
+    const auto accepted = controlled_->pair_with_code(code.toStdString());
+    emit stateChanged();
+    return accepted;
   }
 #endif
+  return false;
+}
+
+void RoleController::forgetPairedDevices() {
+  if (connected() || connecting() || pairing() || !pairing_trust_) return;
+  if (!pairing_trust_->forget_all()) failure_text_ = QStringLiteral("Could not save pairing settings.");
   emit stateChanged();
 }
 

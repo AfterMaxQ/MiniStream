@@ -98,7 +98,7 @@ Result<void, DisplayCaptureError> CGDisplayStreamCapture::start(std::uint32_t wi
   }
   config.minimumFrameInterval = CMTimeMake(1, 60);
   config.queueDepth = 3;
-  config.showsCursor = NO;
+  config.showsCursor = YES;
   config.capturesAudio = NO;
   const std::weak_ptr<Impl> weak_state = impl_;
   const auto generation = impl_->generation;

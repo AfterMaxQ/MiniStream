@@ -73,7 +73,7 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         hoverEnabled: true
         preventStealing: true
-        cursorShape: relativeMouse.active ? Qt.BlankCursor : Qt.ArrowCursor
+        cursorShape: root.routing ? Qt.BlankCursor : Qt.ArrowCursor
         function positionRemote(x, y) {
             if (root.gameMouse || !root.routing) return
             const fw = Math.min(width, height * nativeVideo.aspectRatio)

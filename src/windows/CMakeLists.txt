@@ -5,6 +5,7 @@ add_library(
   platform/remote_backend.cpp
   platform/host_capabilities.cpp
   video/dxgi_capture.cpp
+  video/dxgi_cursor.cpp
   video/nvenc_encoder.cpp
   video/mf_decoder.cpp
   video/d3d11_video_surface.cpp

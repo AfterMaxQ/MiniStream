@@ -6,6 +6,7 @@
 #include <array>
 #include <mutex>
 #include <span>
+#include <utility>
 
 namespace ministream {
 namespace {
@@ -41,6 +42,16 @@ std::array<std::byte, 48> signed_ephemeral_message(
 }
 
 }  // namespace
+
+Result<DeviceIdentity, CryptoError> identity_from_seed(std::span<const std::byte> seed) {
+  if (!ensure_sodium() || seed.size() != crypto_sign_SEEDBYTES)
+    return Result<DeviceIdentity, CryptoError>::err(CryptoError::Initialization);
+  DeviceIdentity identity;
+  if (crypto_sign_seed_keypair(raw(identity.public_key.data()), raw(identity.secret_key.data()),
+                              raw(seed.data())) != 0)
+    return Result<DeviceIdentity, CryptoError>::err(CryptoError::KeyExchangeFailed);
+  return Result<DeviceIdentity, CryptoError>::ok(identity);
+}
 
 Result<DeviceIdentity, CryptoError> generate_identity() {
   if (!ensure_sodium()) {
@@ -83,6 +94,67 @@ std::uint32_t compute_pairing_sas(const PairingTranscript& transcript) {
     value = (value << 8U) | byte;
   }
   return static_cast<std::uint32_t>(value % 1'000'000U);
+}
+
+namespace {
+std::array<std::byte, 163> authorization_message(const PairingTranscript& transcript,
+                                              bool initiator, bool accepted) {
+  constexpr char domain[] = "MiniStream pair1";
+  std::array<std::byte, 163> bytes{};
+  std::copy_n(reinterpret_cast<const std::byte*>(domain), 16, bytes.begin());
+  bytes[16] = initiator ? std::byte{1} : std::byte{2};
+  bytes[17] = accepted ? std::byte{1} : std::byte{0};
+  bytes[18] = static_cast<std::byte>(transcript.protocol_version);
+  put_u64(std::span<std::byte, 8>{bytes.data() + 19, 8}, transcript.initiator_nonce);
+  put_u64(std::span<std::byte, 8>{bytes.data() + 27, 8}, transcript.responder_nonce);
+  auto output = bytes.begin() + 35;
+  for (const auto* key : {&transcript.initiator_identity, &transcript.responder_identity,
+                          &transcript.initiator_ephemeral, &transcript.responder_ephemeral})
+    output = std::copy(key->begin(), key->end(), output);
+  return bytes;
+}
+}  // namespace
+
+Result<Signature, CryptoError> sign_pairing_authorization(
+    const DeviceIdentity& identity, const PairingTranscript& transcript,
+    bool initiator, bool accepted) {
+  if (!ensure_sodium()) return Result<Signature, CryptoError>::err(CryptoError::Initialization);
+  const auto message = authorization_message(transcript, initiator, accepted);
+  Signature signature{};
+  if (crypto_sign_detached(raw(signature.data()), nullptr, raw(message.data()), message.size(),
+                           raw(identity.secret_key.data())) != 0)
+    return Result<Signature, CryptoError>::err(CryptoError::KeyExchangeFailed);
+  return Result<Signature, CryptoError>::ok(signature);
+}
+
+bool verify_pairing_authorization(const PairingTranscript& transcript, bool initiator,
+                                 bool accepted, const Signature& signature) {
+  if (!ensure_sodium()) return false;
+  const auto message = authorization_message(transcript, initiator, accepted);
+  const auto& key = initiator ? transcript.initiator_identity : transcript.responder_identity;
+  return crypto_sign_verify_detached(raw(signature.data()), raw(message.data()), message.size(),
+                                    raw(key.data())) == 0;
+}
+
+PairingTrust::PairingTrust(DeviceIdentity identity, std::vector<PublicKey> peers, Save save)
+    : identity_(identity), peers_(std::move(peers)), save_(std::move(save)) {}
+PairingTrust::~PairingTrust() { sodium_memzero(identity_.secret_key.data(), identity_.secret_key.size()); }
+bool PairingTrust::trusted(const PublicKey& peer) const {
+  return std::find(peers_.begin(), peers_.end(), peer) != peers_.end();
+}
+bool PairingTrust::remember(const PublicKey& peer) {
+  if (trusted(peer)) return true;
+  if (peers_.size() >= 256) return false;
+  auto updated = peers_;
+  updated.push_back(peer);
+  if (save_ && !save_(updated)) return false;
+  peers_ = std::move(updated);
+  return true;
+}
+bool PairingTrust::forget_all() {
+  if (save_ && !save_({})) return false;
+  peers_.clear();
+  return true;
 }
 
 Result<Signature, CryptoError> sign_session_ephemeral(

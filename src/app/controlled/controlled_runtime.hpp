@@ -26,6 +26,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace ministream {
@@ -35,7 +36,8 @@ class ControlledRuntime {
   ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
                     DiscoveryAdvertisement advertisement,
                     DiscoveryConfig discovery_config = {},
-                    SessionTiming timing = {});
+                    SessionTiming timing = {},
+                    std::shared_ptr<PairingTrust> trust = {});
   ~ControlledRuntime();
 
   ControlledRuntime(const ControlledRuntime&) = delete;
@@ -55,6 +57,7 @@ class ControlledRuntime {
   void set_telemetry_callback(std::function<void(const StreamSnapshot&)> callback);
 
   void confirm_pairing();
+  bool pair_with_code(std::string_view code);
   void cancel_pairing();
   void tick();
 
@@ -95,6 +98,9 @@ class ControlledRuntime {
   GamepadSequenceFilter gamepad_sequence_filter_;
   ReliableDesktopInputReceiver reliable_input_receiver_;
   std::optional<DeviceIdentity> identity_;
+  std::shared_ptr<PairingTrust> pairing_trust_;
+  std::optional<PairingTranscript> authorization_transcript_;
+  std::optional<std::array<std::byte, 70>> authorization_packet_;
   std::optional<EphemeralKeyPair> ephemeral_;
   std::optional<Hello> peer_hello_;
   std::optional<SteadyClock::time_point> peer_handshake_deadline_;

@@ -1,4 +1,5 @@
 #include "windows/video/dxgi_capture.hpp"
+#include "windows/video/dxgi_cursor.hpp"
 
 #include <d3dcompiler.h>
 
@@ -7,6 +8,7 @@
 #include <limits>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 namespace ministream {
 namespace {
@@ -156,6 +158,9 @@ struct DxgiCapture::Impl {
   std::uint32_t processor_output_height{};
   std::uint64_t next_frame_id{};
   DxgiCaptureInfo capture_info;
+  std::unique_ptr<DxgiCursorCompositor> cursor;
+  DXGI_OUTDUPL_POINTER_POSITION cursor_position{};
+  std::vector<std::byte> cursor_bytes;
 };
 
 DxgiCapture::DxgiCapture() : impl_(std::make_unique<Impl>()) {}
@@ -165,6 +170,8 @@ DxgiCapture& DxgiCapture::operator=(DxgiCapture&&) noexcept = default;
 
 Result<void, CaptureError> DxgiCapture::initialize() {
   impl_->capture_info = {};
+  impl_->cursor = std::make_unique<DxgiCursorCompositor>();
+  impl_->cursor_position = {};
   constexpr UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
   D3D_FEATURE_LEVEL created_level{};
   if (!impl_->device && FAILED(D3D11CreateDevice(
@@ -257,19 +264,40 @@ Result<CapturedFrame, CaptureError> DxgiCapture::acquire(Microseconds timeout) {
   }
   D3D11_TEXTURE2D_DESC description{};
   texture->GetDesc(&description);
+  if (info.LastMouseUpdateTime.QuadPart != 0) impl_->cursor_position = info.PointerPosition;
+  if (info.PointerShapeBufferSize != 0) {
+    if (info.PointerShapeBufferSize > 4U * 1024U * 1024U) {
+      impl_->duplication->ReleaseFrame();
+      return Result<CapturedFrame, CaptureError>::err(CaptureError::Acquire);
+    }
+    impl_->cursor_bytes.resize(info.PointerShapeBufferSize);
+    DXGI_OUTDUPL_POINTER_SHAPE_INFO shape{};
+    UINT required{};
+    if (FAILED(impl_->duplication->GetFramePointerShape(
+            info.PointerShapeBufferSize, impl_->cursor_bytes.data(), &required, &shape)) ||
+        !impl_->cursor->update_shape(shape, impl_->cursor_bytes)) {
+      impl_->duplication->ReleaseFrame();
+      return Result<CapturedFrame, CaptureError>::err(CaptureError::Acquire);
+    }
+  }
   // The duplication surface is no longer ours after ReleaseFrame. Copy it
   // while acquired so NVENC (and the static-desktop cache) owns stable pixels.
   auto copy_description = description;
   copy_description.Usage = D3D11_USAGE_DEFAULT;
   copy_description.CPUAccessFlags = 0;
   copy_description.MiscFlags = 0;
-  copy_description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+  copy_description.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
   Microsoft::WRL::ComPtr<ID3D11Texture2D> owned;
   if (FAILED(impl_->device->CreateTexture2D(&copy_description, nullptr, &owned))) {
     impl_->duplication->ReleaseFrame();
     return Result<CapturedFrame, CaptureError>::err(CaptureError::Acquire);
   }
   impl_->context->CopyResource(owned.Get(), texture.Get());
+  if (!impl_->cursor->compose(impl_->device.Get(), impl_->context.Get(), owned.Get(),
+                              impl_->cursor_position)) {
+    impl_->duplication->ReleaseFrame();
+    return Result<CapturedFrame, CaptureError>::err(CaptureError::Acquire);
+  }
   impl_->context->Flush();
   impl_->duplication->ReleaseFrame();
   return Result<CapturedFrame, CaptureError>::ok(

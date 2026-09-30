@@ -13,7 +13,7 @@ TEST_CASE("common header has a stable big-endian representation") {
   const auto encoded = encode_common_header(header);
   const std::array<std::byte, 12> expected{
       std::byte{0x4D}, std::byte{0x53}, std::byte{0x54}, std::byte{0x52},
-      std::byte{0x02}, std::byte{0x02}, std::byte{0x01}, std::byte{0x02},
+      std::byte{kProtocolVersion}, std::byte{0x02}, std::byte{0x01}, std::byte{0x02},
       std::byte{0x03}, std::byte{0x04}, std::byte{0x04}, std::byte{0x06}};
 
   REQUIRE(encoded == expected);

@@ -273,9 +273,13 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
   REQUIRE(controlled.pairing());
   REQUIRE_FALSE(remote.pairing_code().empty());
   REQUIRE(remote.pairing_code() == controlled.pairing_code());
+  pump(controlled, remote, 3);
+  REQUIRE_FALSE(controlled.streaming());
+  REQUIRE_FALSE(remote.streaming());
 
-  remote.confirm_pairing();
-  controlled.confirm_pairing();
+  REQUIRE_FALSE(controlled.pair_with_code("not-a-code"));
+  REQUIRE(controlled.pairing());
+  REQUIRE(controlled.pair_with_code(remote.pairing_code()));
   for (unsigned attempt = 0; attempt < 750U &&
                                 (!remote.streaming() || !controlled.streaming());
        ++attempt) {
@@ -367,15 +371,6 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
   REQUIRE(remote.discovery_state() == DiscoveryState::Complete);
   REQUIRE(remote.hosts().size() == 1);
   REQUIRE(remote.connect(0));
-  for (unsigned attempt = 0; attempt < 750U &&
-                                (!remote.pairing() || !controlled.pairing());
-       ++attempt) {
-    pump(controlled, remote);
-  }
-  REQUIRE(remote.pairing());
-  REQUIRE(controlled.pairing());
-  remote.confirm_pairing();
-  controlled.confirm_pairing();
   for (unsigned attempt = 0; attempt < 750U &&
                                 (!remote.streaming() || !controlled.streaming());
        ++attempt) {
@@ -528,12 +523,20 @@ TEST_CASE("controlled pairing survives retry exhaustion and converges in grace")
   drain(controller);
 
   REQUIRE(controller.send(encode_pairing_offer(offer)));
-  REQUIRE(wait_for_datagram(
+  const auto responder_datagram = wait_for_datagram(
       controller, [&] { controlled.tick(); },
       [](std::span<const std::byte> bytes) {
         const auto response = decode_pairing_offer(bytes);
         return response && response->role == PairingRole::Responder;
-      }));
+      });
+  REQUIRE(responder_datagram);
+  const auto responder = decode_pairing_offer(responder_datagram->datagram.bytes);
+  REQUIRE(responder);
+  const auto transcript = pairing_transcript(offer, *responder);
+  REQUIRE(transcript);
+  const auto signature = sign_pairing_authorization(*identity, *transcript, true, true);
+  REQUIRE(signature);
+  const auto authorization = encode_pairing_authorization({true, *signature});
   REQUIRE(controlled.pairing());
 
   controlled.confirm_pairing();
@@ -546,7 +549,16 @@ TEST_CASE("controlled pairing survives retry exhaustion and converges in grace")
   REQUIRE(controlled.pairing());
   drain(controller);
 
+  // An unsigned old-style acceptance must never authorize input or streaming.
   REQUIRE(controller.send(encode_pairing_confirmation(true)));
+  controlled.tick();
+  REQUIRE(controlled.pairing());
+  auto forged = authorization;
+  forged.back() ^= std::byte{1};
+  REQUIRE(controller.send(forged));
+  controlled.tick();
+  REQUIRE(controlled.pairing());
+  REQUIRE(controller.send(authorization));
   for (unsigned attempt = 0; attempt < 100U && !controlled.streaming(); ++attempt) {
     controlled.tick();
     std::this_thread::sleep_for(1ms);
@@ -554,12 +566,12 @@ TEST_CASE("controlled pairing survives retry exhaustion and converges in grace")
   REQUIRE(controlled.streaming());
   drain(controller);
 
-  REQUIRE(controller.send(encode_pairing_confirmation(true)));
+  REQUIRE(controller.send(authorization));
   REQUIRE(wait_for_datagram(
       controller, [&] { controlled.tick(); },
       [](std::span<const std::byte> bytes) {
-        const auto accepted = decode_pairing_confirmation(bytes);
-        return accepted && *accepted;
+        const auto accepted = decode_pairing_authorization(bytes);
+        return accepted && accepted->accepted;
       }));
 
   const auto clear_input_before_timeout = controlled_backend_ptr->clear_input_calls;
@@ -571,6 +583,69 @@ TEST_CASE("controlled pairing survives retry exhaustion and converges in grace")
   REQUIRE(controlled.state() == RoleState::Broadcasting);
   REQUIRE(controlled_backend_ptr->clear_input_calls == clear_input_before_timeout + 1U);
   REQUIRE(controlled_backend_ptr->clear_gamepad_calls == clear_gamepad_before_timeout + 1U);
+}
+
+TEST_CASE("restored pairing trust authenticates reconnects and forget revokes them", "[pairing]") {
+  const auto identity = generate_identity();
+  const auto peer = generate_identity();
+  const auto attacker = generate_identity();
+  REQUIRE(identity); REQUIRE(peer); REQUIRE(attacker);
+  std::vector<PairingTrust::PublicKey> saved;
+  auto trust = std::make_shared<PairingTrust>(*identity, saved, [&](const auto& peers) {
+    saved = peers; return true;
+  });
+  DiscoveryConfig config;
+  config.port = unused_udp_port();
+  config.target_override = {{127, 0, 0, 1}};
+  std::optional<Signature> previous;
+  for (unsigned connection = 0; connection < 3; ++connection) {
+    if (connection == 1) {
+      const auto restored = identity_from_seed({identity->secret_key.data(), 32});
+      REQUIRE(restored);
+      trust = std::make_shared<PairingTrust>(*restored, saved);
+    }
+    if (connection == 2) REQUIRE(trust->forget_all());
+    ControlledRuntime controlled(std::make_unique<LoopbackControlledBackend>(),
+                                  advertisement(), config, SessionTiming{}, trust);
+    REQUIRE(controlled.start());
+    UdpEndpoint controller;
+    REQUIRE(controller.bind(0));
+    REQUIRE(controller.set_remote("127.0.0.1", controlled.advertisement().session_port));
+    const auto hello = loopback_hello(8800 + connection);
+    REQUIRE(controller.send(encode_hello(hello)));
+    REQUIRE(wait_for_datagram(controller, [&] { controlled.tick(); },
+        [](auto bytes) { return decode_accept(bytes).has_value(); }));
+    const auto ephemeral = generate_ephemeral_keypair();
+    REQUIRE(ephemeral);
+    PairingOffer offer{PairingRole::Initiator, hello.nonce, peer->public_key, ephemeral->public_key};
+    REQUIRE(controller.send(encode_pairing_offer(offer)));
+    const auto reply = wait_for_datagram(controller, [&] { controlled.tick(); },
+        [](auto bytes) { return decode_pairing_offer(bytes).has_value(); });
+    REQUIRE(reply);
+    const auto responder = decode_pairing_offer(reply->datagram.bytes);
+    REQUIRE(responder);
+    REQUIRE(responder->identity == identity->public_key);
+    const auto transcript = pairing_transcript(offer, *responder);
+    REQUIRE(transcript);
+    const auto forged = sign_pairing_authorization(*attacker, *transcript, true, true);
+    REQUIRE(forged);
+    REQUIRE(controller.send(encode_pairing_authorization({true, *forged})));
+    if (previous) REQUIRE(controller.send(encode_pairing_authorization({true, *previous})));
+    for (unsigned n = 0; n < 4; ++n) { controlled.tick(); std::this_thread::sleep_for(1ms); }
+    REQUIRE(controlled.pairing());
+    const auto signature = sign_pairing_authorization(*peer, *transcript, true, true);
+    REQUIRE(signature);
+    REQUIRE(controller.send(encode_pairing_authorization({true, *signature})));
+    for (unsigned n = 0; n < 4; ++n) { controlled.tick(); std::this_thread::sleep_for(1ms); }
+    if (connection != 1) {
+      REQUIRE(controlled.pairing());
+      REQUIRE(controlled.pair_with_code(controlled.pairing_code()));
+    }
+    REQUIRE(controlled.streaming());
+    REQUIRE(trust->trusted(peer->public_key));
+    previous = *signature;
+    controlled.stop();
+  }
 }
 
 TEST_CASE("controlled runtime expires an abandoned human pairing") {
@@ -680,8 +755,13 @@ TEST_CASE("remote pairing replies during post-confirmation grace") {
   const auto ephemeral = generate_ephemeral_keypair();
   REQUIRE(identity);
   REQUIRE(ephemeral);
-  REQUIRE(controlled_peer.reply(encode_pairing_offer(
-      {PairingRole::Responder, 5005, identity->public_key, ephemeral->public_key})));
+  const PairingOffer responder{PairingRole::Responder, 5005, identity->public_key, ephemeral->public_key};
+  REQUIRE(controlled_peer.reply(encode_pairing_offer(responder)));
+  const auto transcript = pairing_transcript(*initiator_offer, responder);
+  REQUIRE(transcript);
+  const auto signature = sign_pairing_authorization(*identity, *transcript, false, true);
+  REQUIRE(signature);
+  const auto authorization = encode_pairing_authorization({true, *signature});
   for (unsigned attempt = 0; attempt < 100U && remote.pairing_code().empty(); ++attempt) {
     remote.tick();
     std::this_thread::sleep_for(1ms);
@@ -689,7 +769,7 @@ TEST_CASE("remote pairing replies during post-confirmation grace") {
   REQUIRE(remote.pairing());
   REQUIRE_FALSE(remote.pairing_code().empty());
 
-  REQUIRE(controlled_peer.reply(encode_pairing_confirmation(true)));
+  REQUIRE(controlled_peer.reply(authorization));
   remote.confirm_pairing();
   for (unsigned attempt = 0; attempt < 100U && !remote.streaming(); ++attempt) {
     remote.tick();
@@ -698,12 +778,12 @@ TEST_CASE("remote pairing replies during post-confirmation grace") {
   REQUIRE(remote.streaming());
   drain(controlled_peer);
 
-  REQUIRE(controlled_peer.reply(encode_pairing_confirmation(true)));
+  REQUIRE(controlled_peer.reply(authorization));
   REQUIRE(wait_for_datagram(
       controlled_peer, [&] { remote.tick(); },
       [](std::span<const std::byte> bytes) {
-        const auto accepted = decode_pairing_confirmation(bytes);
-        return accepted && *accepted;
+        const auto accepted = decode_pairing_authorization(bytes);
+        return accepted && accepted->accepted;
       }));
 
   const auto rumble_clear_before_timeout = remote_backend_ptr->rumble_clear_calls;

@@ -25,11 +25,13 @@ std::uint64_t random_nonce() {
 RemoteRuntime::RemoteRuntime(std::unique_ptr<RemoteBackend> backend,
                              DiscoveryConfig discovery_config,
                              DiscoveryInterfaceProvider interface_provider,
-                             SessionTiming timing)
+                             SessionTiming timing,
+                             std::shared_ptr<PairingTrust> trust)
     : backend_(std::move(backend)),
       discovery_config_(std::move(discovery_config)),
       interface_provider_(std::move(interface_provider)),
       timing_(timing),
+      pairing_trust_(std::move(trust)),
       confirmation_retrier_(timing_.confirmation_retry_interval) {
   input_router_ = std::make_unique<RemoteInputRouter>(
       input_capture_, [this](const DesktopInput& input) { return send_input(input); });
@@ -178,7 +180,7 @@ bool RemoteRuntime::connect(std::size_t index, StreamProfileId profile_id) {
 }
 
 void RemoteRuntime::confirm_pairing() {
-  if (!pairing() || !session_) {
+  if (!pairing() || !session_ || !authorization_transcript_) {
     return;
   }
   confirmation_.confirm_local();
@@ -202,8 +204,15 @@ void RemoteRuntime::send_pairing_offer(SteadyClock::time_point now) {
 }
 
 void RemoteRuntime::send_pairing_confirmation(bool accepted) {
-  if (session_) {
-    session_->send(encode_pairing_confirmation(accepted));
+  if (session_ && identity_ && authorization_transcript_) {
+    if (!authorization_packet_ || !accepted) {
+      const auto signature = sign_pairing_authorization(*identity_, *authorization_transcript_, true, accepted);
+      if (!signature) return;
+      const auto packet = encode_pairing_authorization({accepted, *signature});
+      if (!accepted) { session_->send(packet); return; }
+      authorization_packet_ = packet;
+    }
+    session_->send(*authorization_packet_);
   }
 }
 
@@ -222,6 +231,10 @@ void RemoteRuntime::finish_streaming() {
   media_receiver_ = std::make_unique<MediaReceiver>(session_id_, *crypto_);
   audio_decoder_ = std::make_unique<OpusDecoder48kStereo>();
   if (!audio_decoder_->ready()) {
+    disconnect_session();
+    return;
+  }
+  if (!pairing_trust_->remember(peer_offer_->identity)) {
     disconnect_session();
     return;
   }
@@ -471,13 +484,16 @@ void RemoteRuntime::process_datagram(const ReceivedDatagram& incoming) {
             accepted->bitrate_bps <= selected_max_bitrate_bps_ &&
             handshake_retrier_->accept(*accepted)) {
       session_id_ = accepted->session_id;
-      const auto identity = generate_identity();
+      if (!pairing_trust_) {
+        const auto identity = generate_identity();
+        if (identity) pairing_trust_ = std::make_shared<PairingTrust>(*identity);
+      }
       const auto ephemeral = generate_ephemeral_keypair();
-      if (!identity || !ephemeral || !hello_) {
+      if (!pairing_trust_ || !ephemeral || !hello_) {
         disconnect_session();
         return;
       }
-      identity_ = *identity;
+      identity_ = pairing_trust_->identity();
       ephemeral_ = *ephemeral;
       local_offer_ = PairingOffer{PairingRole::Initiator, hello_->nonce,
                                   identity_->public_key, ephemeral_->public_key};
@@ -503,18 +519,22 @@ void RemoteRuntime::process_datagram(const ReceivedDatagram& incoming) {
     if (!transcript) {
       return;
     }
+    authorization_transcript_ = *transcript;
     pairing_code_ = std::to_string(compute_pairing_sas(*transcript));
     if (pairing_code_.size() < 6) {
       pairing_code_.insert(pairing_code_.begin(), 6 - pairing_code_.size(), '0');
     }
     pairing_offer_retrier_.reset();
+    if (!confirmation_.local_confirmed()) confirm_pairing();
     return;
   }
 
-  if (const auto accepted = decode_pairing_confirmation(bytes); accepted) {
-    const auto now = SteadyClock::now();
+  if (const auto authorization = decode_pairing_authorization(bytes);
+      authorization && authorization_transcript_ &&
+      verify_pairing_authorization(*authorization_transcript_, false,
+                                   authorization->accepted, authorization->signature)) {
     if (state_ == RoleState::Pairing) {
-      if (!*accepted) {
+      if (!authorization->accepted) {
         disconnect_session();
         return;
       }
@@ -522,9 +542,6 @@ void RemoteRuntime::process_datagram(const ReceivedDatagram& incoming) {
       if (confirmation_.ready()) {
         finish_streaming();
       }
-    } else if (*accepted && streaming() && confirmation_grace_deadline_ &&
-               now < *confirmation_grace_deadline_) {
-      send_pairing_confirmation(true);
     }
   }
 }
@@ -801,6 +818,8 @@ void RemoteRuntime::disconnect_session() noexcept {
   gamepad_coalescer_ = InputCoalescer{};
   reliable_input_ = ReliableControl{};
   session_keys_.reset();
+  authorization_transcript_.reset();
+  authorization_packet_.reset();
   selected_min_bitrate_bps_ = 0;
   selected_max_bitrate_bps_ = 0;
   identity_.reset();

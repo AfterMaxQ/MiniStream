@@ -40,7 +40,8 @@ class RemoteRuntime {
   explicit RemoteRuntime(std::unique_ptr<RemoteBackend> backend,
                          DiscoveryConfig discovery_config = {},
                          DiscoveryInterfaceProvider interface_provider = {},
-                         SessionTiming timing = {});
+                         SessionTiming timing = {},
+                         std::shared_ptr<PairingTrust> trust = {});
   ~RemoteRuntime();
 
   RemoteRuntime(const RemoteRuntime&) = delete;
@@ -111,6 +112,9 @@ class RemoteRuntime {
   unsigned missing_audio_frames_{};
   std::optional<SteadyClock::time_point> next_audio_playout_;
   std::optional<DeviceIdentity> identity_;
+  std::shared_ptr<PairingTrust> pairing_trust_;
+  std::optional<PairingTranscript> authorization_transcript_;
+  std::optional<std::array<std::byte, 70>> authorization_packet_;
   std::optional<EphemeralKeyPair> ephemeral_;
   std::optional<Hello> hello_;
   std::optional<PairingOffer> local_offer_;

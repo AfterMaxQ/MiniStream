@@ -7,9 +7,10 @@ namespace ministream {
 namespace {
 
 constexpr std::array<std::byte, 4> kMagic{
-    std::byte{'M'}, std::byte{'S'}, std::byte{'P'}, std::byte{'2'}};
+    std::byte{'M'}, std::byte{'S'}, std::byte{'P'}, std::byte{'3'}};
 constexpr std::byte kOffer{1};
 constexpr std::byte kConfirmation{2};
+constexpr std::byte kAuthorization{3};
 
 void put_u64(std::span<std::byte, 8> output, std::uint64_t value) {
   for (std::size_t index = 0; index < output.size(); ++index) {
@@ -86,6 +87,23 @@ std::optional<PairingTranscript> pairing_transcript(const PairingOffer& initiato
                            responder.identity,
                            initiator.ephemeral,
                            responder.ephemeral};
+}
+
+std::array<std::byte, 70> encode_pairing_authorization(const PairingAuthorization& authorization) {
+  std::array<std::byte, 70> bytes{};
+  std::copy(kMagic.begin(), kMagic.end(), bytes.begin());
+  bytes[4] = kAuthorization;
+  bytes[5] = authorization.accepted ? std::byte{1} : std::byte{0};
+  std::copy(authorization.signature.begin(), authorization.signature.end(), bytes.begin() + 6);
+  return bytes;
+}
+
+std::optional<PairingAuthorization> decode_pairing_authorization(std::span<const std::byte> bytes) {
+  if (bytes.size() != 70 || !valid_header(bytes, kAuthorization) ||
+      (bytes[5] != std::byte{0} && bytes[5] != std::byte{1})) return std::nullopt;
+  PairingAuthorization authorization{bytes[5] == std::byte{1}, {}};
+  std::copy_n(bytes.begin() + 6, 64, authorization.signature.begin());
+  return authorization;
 }
 
 }  // namespace ministream

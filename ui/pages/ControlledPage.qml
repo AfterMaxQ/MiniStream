@@ -70,8 +70,16 @@ Item {
                 onClicked: root.controller.refresh()
                 visible: !root.controller.broadcasting
             }
+            AppButton {
+                id: forgetButton
+                visible: root.controller.pairedDeviceCount > 0
+                text: "Forget paired devices"
+                onClicked: root.controller.forgetPairedDevices()
+            }
             Item {
-                width: Math.max(0, parent.width - checkButton.width - actionButton.width - Tokens.space12)
+                width: Math.max(0, parent.width - actionButton.width - Tokens.space12
+                    - (checkButton.visible ? checkButton.width + Tokens.space12 : 0)
+                    - (forgetButton.visible ? forgetButton.width + Tokens.space12 : 0))
                 height: 1
             }
             AppButton {

@@ -27,7 +27,8 @@ std::uint64_t random_nonce() {
 ControlledRuntime::ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
                                      DiscoveryAdvertisement advertisement,
                                      DiscoveryConfig discovery_config,
-                                     SessionTiming timing)
+                                     SessionTiming timing,
+                                     std::shared_ptr<PairingTrust> trust)
     : backend_(std::move(backend)),
       advertisement_(std::move(advertisement)),
       discovery_config_(std::move(discovery_config)),
@@ -49,6 +50,7 @@ ControlledRuntime::ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
         // local to the controlled host and must not tear down the media session.
         return true;
       }),
+      pairing_trust_(std::move(trust)),
       confirmation_retrier_(timing_.confirmation_retry_interval) {
   advertisement_.controllable = false;
 }
@@ -93,13 +95,16 @@ bool ControlledRuntime::start() {
 
   discovery_ = std::make_unique<DiscoveryHost>();
   session_ = std::make_unique<UdpEndpoint>();
-  const auto identity = generate_identity();
+  if (!pairing_trust_) {
+    const auto identity = generate_identity();
+    if (identity) pairing_trust_ = std::make_shared<PairingTrust>(*identity);
+  }
   const auto ephemeral = generate_ephemeral_keypair();
-  if (!identity || !ephemeral || !discovery_->start(discovery_config_) || !session_->bind(0)) {
+  if (!pairing_trust_ || !ephemeral || !discovery_->start(discovery_config_) || !session_->bind(0)) {
     stop();
     return false;
   }
-  identity_ = *identity;
+  identity_ = pairing_trust_->identity();
   ephemeral_ = *ephemeral;
 
   advertisement_.session_port = session_->local_port();
@@ -149,6 +154,8 @@ void ControlledRuntime::stop() noexcept {
   last_discovery_error_.reset();
   session_.reset();
   identity_.reset();
+  authorization_transcript_.reset();
+  authorization_packet_.reset();
   ephemeral_.reset();
   peer_hello_.reset();
   peer_handshake_deadline_.reset();
@@ -240,7 +247,7 @@ void ControlledRuntime::create_media_sender() {
 }
 
 void ControlledRuntime::confirm_pairing() {
-  if (!pairing() || !session_) {
+  if (!pairing() || !session_ || !authorization_transcript_) {
     return;
   }
   confirmation_.confirm_local();
@@ -251,6 +258,12 @@ void ControlledRuntime::confirm_pairing() {
     return;
   }
   finish_streaming(now);
+}
+
+bool ControlledRuntime::pair_with_code(std::string_view code) {
+  if (!pairing() || pairing_code_.size() != 6 || code != pairing_code_) return false;
+  confirm_pairing();
+  return true;
 }
 
 void ControlledRuntime::finish_streaming(SteadyClock::time_point now) {
@@ -266,6 +279,10 @@ void ControlledRuntime::finish_streaming(SteadyClock::time_point now) {
   create_media_sender();
   if (!media_sender_) {
     stop();
+    return;
+  }
+  if (!pairing_trust_->remember(peer_offer_->identity)) {
+    clear_peer_session();
     return;
   }
   state_ = RoleState::Streaming;
@@ -297,10 +314,7 @@ void ControlledRuntime::tick_confirmation_grace(SteadyClock::time_point now) {
 }
 
 void ControlledRuntime::cancel_pairing() {
-  if (session_) {
-    const auto message = encode_pairing_confirmation(false);
-    session_->reply(message);
-  }
+  send_pairing_confirmation(false);
   clear_peer_session();
 }
 
@@ -438,6 +452,7 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
     if (!transcript) {
       return;
     }
+    authorization_transcript_ = *transcript;
     pairing_code_ = std::to_string(compute_pairing_sas(*transcript));
     if (pairing_code_.size() < 6) {
       pairing_code_.insert(pairing_code_.begin(), 6 - pairing_code_.size(), '0');
@@ -451,18 +466,26 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
     return;
   }
 
-  if (const auto accepted = decode_pairing_confirmation(bytes); accepted && session_) {
+  if (const auto authorization = decode_pairing_authorization(bytes);
+      authorization && session_ && authorization_transcript_ &&
+      verify_pairing_authorization(*authorization_transcript_, true,
+                                   authorization->accepted, authorization->signature)) {
     const auto now = SteadyClock::now();
     if (state_ == RoleState::Pairing) {
-      if (!*accepted) {
+      if (!authorization->accepted) {
         clear_peer_session();
         return;
       }
       confirmation_.confirm_peer();
+      if (!confirmation_.local_confirmed() && peer_offer_ &&
+          pairing_trust_->trusted(peer_offer_->identity)) {
+        confirm_pairing();
+        return;
+      }
       if (confirmation_.ready() && ephemeral_ && peer_offer_) {
         finish_streaming(now);
       }
-    } else if (*accepted && streaming() && confirmation_grace_deadline_ &&
+    } else if (authorization->accepted && streaming() && confirmation_grace_deadline_ &&
                now < *confirmation_grace_deadline_) {
       send_pairing_confirmation(true);
     }
@@ -700,8 +723,15 @@ void ControlledRuntime::tick() {
 }
 
 void ControlledRuntime::send_pairing_confirmation(bool accepted) {
-  if (session_) {
-    session_->reply(encode_pairing_confirmation(accepted));
+  if (session_ && identity_ && authorization_transcript_) {
+    if (!authorization_packet_ || !accepted) {
+      const auto signature = sign_pairing_authorization(*identity_, *authorization_transcript_, false, accepted);
+      if (!signature) return;
+      const auto packet = encode_pairing_authorization({accepted, *signature});
+      if (!accepted) { session_->reply(packet); return; }
+      authorization_packet_ = packet;
+    }
+    session_->reply(*authorization_packet_);
   }
 }
 
@@ -753,6 +783,8 @@ void ControlledRuntime::clear_peer_session() noexcept {
   gamepad_sequence_filter_ = GamepadSequenceFilter{};
   reliable_input_receiver_.reset();
   session_keys_.reset();
+  authorization_transcript_.reset();
+  authorization_packet_.reset();
   peer_hello_.reset();
   peer_handshake_deadline_.reset();
   confirmation_grace_deadline_.reset();

@@ -14,6 +14,7 @@ namespace ministream {
 
 class ControlledRuntime;
 class RemoteRuntime;
+class PairingTrust;
 
 class RoleController final : public QObject {
   Q_OBJECT
@@ -33,6 +34,7 @@ class RoleController final : public QObject {
   Q_PROPERTY(QString broadcastStatus READ broadcastStatus NOTIFY stateChanged)
   Q_PROPERTY(QStringList hosts READ hosts NOTIFY stateChanged)
   Q_PROPERTY(QString pairingCode READ pairingCode NOTIFY stateChanged)
+  Q_PROPERTY(int pairedDeviceCount READ pairedDeviceCount NOTIFY stateChanged)
   Q_PROPERTY(QString selectedDeviceLabel READ selectedDeviceLabel NOTIFY stateChanged)
   Q_PROPERTY(QString statusText READ statusText NOTIFY stateChanged)
   Q_PROPERTY(QString videoStatus READ videoStatus NOTIFY stateChanged)
@@ -69,6 +71,7 @@ class RoleController final : public QObject {
   [[nodiscard]] QString broadcastStatus() const;
   [[nodiscard]] QStringList hosts() const;
   [[nodiscard]] QString pairingCode() const;
+  [[nodiscard]] int pairedDeviceCount() const noexcept;
   [[nodiscard]] QString selectedDeviceLabel() const;
   [[nodiscard]] QString statusText() const;
   [[nodiscard]] QString videoStatus() const;
@@ -88,7 +91,8 @@ class RoleController final : public QObject {
   Q_INVOKABLE void refresh();
   Q_INVOKABLE void findDevices();
   Q_INVOKABLE void connectToDevice(int index);
-  Q_INVOKABLE void confirmPairing();
+  Q_INVOKABLE bool pairWithCode(const QString& code);
+  Q_INVOKABLE void forgetPairedDevices();
   Q_INVOKABLE void cancelPairing();
   Q_INVOKABLE void toggleRemoteInput();
   Q_INVOKABLE void releaseRemoteInput();
@@ -116,6 +120,7 @@ class RoleController final : public QObject {
   RemoteCapabilities remote_capabilities_;
   QString failure_text_;
   QTimer tick_timer_;
+  std::shared_ptr<PairingTrust> pairing_trust_;
 #if defined(_WIN32) || defined(__APPLE__)
   // The object is a small Qt-facing adapter around the platform's latest
   // native texture. It is kept before the runtimes so it outlives them.

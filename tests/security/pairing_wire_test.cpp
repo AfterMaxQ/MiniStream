@@ -1,4 +1,5 @@
 #include "core/security/pairing_wire.hpp"
+#include "core/protocol/wire.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,7 +15,7 @@ TEST_CASE("pairing offer carries role nonce identity and ephemeral key") {
   std::ranges::fill(offer.ephemeral, std::byte{0x22});
 
   const auto bytes = encode_pairing_offer(offer);
-  REQUIRE(bytes[3] == std::byte{'2'});
+  REQUIRE(bytes[3] == std::byte{'3'});
   REQUIRE(decode_pairing_offer(bytes) == offer);
   auto malformed = bytes;
   malformed[4] = std::byte{0xFF};
@@ -36,7 +37,7 @@ TEST_CASE("pairing transcript has stable initiator and responder ordering") {
   responder.identity[0] = std::byte{2};
   const auto transcript = pairing_transcript(initiator, responder);
   REQUIRE(transcript.has_value());
-  REQUIRE(transcript->protocol_version == 2);
+  REQUIRE(transcript->protocol_version == kProtocolVersion);
   REQUIRE(transcript->initiator_nonce == 10);
   REQUIRE(transcript->responder_nonce == 20);
   REQUIRE(transcript->initiator_identity[0] == std::byte{1});
