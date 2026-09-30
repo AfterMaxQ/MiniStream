@@ -141,6 +141,9 @@ class RemoteRuntime {
   std::optional<SteadyClock::time_point> last_feedback_send_;
   std::uint32_t feedback_sequence_{};
   StreamAggregator telemetry_;
+  std::optional<SteadyClock::time_point> video_stats_since_;
+  std::uint64_t video_stats_frames_{};
+  double video_stats_work_ms_{};
   std::function<void(const StreamSnapshot&)> telemetry_callback_;
 };
 

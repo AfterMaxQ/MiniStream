@@ -10,6 +10,9 @@ std::optional<StreamProfile> supported_profile(
     const DiscoveredHost& host, const RemoteCapabilities& remote,
     StreamProfileId id) noexcept {
   auto profile = stream_profile(id);
+  if (id == StreamProfileId::Debug1080 && host.capabilities.hevc && remote.hevc) {
+    profile.codec = VideoCodec::Hevc;
+  }
   const bool host_codec = profile.codec == VideoCodec::H264
                               ? host.capabilities.h264
                               : host.capabilities.hevc;
@@ -37,13 +40,13 @@ StreamProfile stream_profile(StreamProfileId id) noexcept {
   switch (id) {
     case StreamProfileId::Debug1080:
       return {id, 1920, 1080, 60, VideoCodec::H264, false,
-              10'000'000, 20'000'000, 30'000'000};
+              2'000'000, 8'000'000, 20'000'000};
     case StreamProfileId::Balanced1440:
       return {id, 2560, 1440, 60, VideoCodec::Hevc, false,
-              20'000'000, 35'000'000, 60'000'000};
+              4'000'000, 16'000'000, 40'000'000};
     case StreamProfileId::Quality4K:
       return {id, 3840, 2160, 60, VideoCodec::Hevc, true,
-              20'000'000, 50'000'000, 80'000'000};
+              8'000'000, 24'000'000, 60'000'000};
   }
   return {};
 }

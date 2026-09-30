@@ -20,6 +20,30 @@ std::array<std::byte, 32> test_key() {
 }
 }  // namespace
 
+TEST_CASE("paced P frame survives a WiFi delivery burst longer than 25ms") {
+  const auto key = test_key();
+  SessionCrypto tx{17, key, key, 71, 71};
+  SessionCrypto rx{17, key, key, 71, 71};
+  PacketScheduler scheduler;
+  scheduler.set_video_rate(8'000'000);
+  MediaSender sender{17, tx, scheduler};
+  MediaReceiver receiver{17, rx};
+  const auto start = SteadyClock::time_point{};
+  const EncodedFrame frame{1, 1234, false, std::vector<std::byte>(80'000, std::byte{0x37})};
+  REQUIRE(sender.enqueue_video(frame, start) > 0);
+  std::optional<EncodedFrame> restored;
+  for (unsigned tick = 0; tick < 100 && !restored; ++tick) {
+    const auto now = start + tick * 1ms;
+    for (const auto& packet : scheduler.drain(now, 512)) {
+      if (auto completed = receiver.receive_video(packet, now)) restored = std::move(completed);
+    }
+    receiver.expire_video(now);
+  }
+  REQUIRE(restored);
+  REQUIRE(restored->bytes == frame.bytes);
+  REQUIRE(receiver.fec_unrecoverable_frames() == 0);
+}
+
 TEST_CASE("media sender authenticates video and audio without exceeding MTU") {
   const auto key = test_key();
   SessionCrypto tx{7, key, key, 11, 11};
@@ -235,7 +259,7 @@ TEST_CASE("media receiver accounts for missing first middle and last shards") {
       }
     }
     REQUIRE(receiver.received_video_packets() == 2);
-    receiver.expire_video(now + 26ms);
+    receiver.expire_video(now + 101ms);
     REQUIRE(receiver.lost_video_packets() == 1);
   }
 }

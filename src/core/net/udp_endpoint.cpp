@@ -6,7 +6,8 @@
 namespace ministream {
 
 NetError detail::classify_send_error(const asio::error_code& error) noexcept {
-  return error == asio::error::would_block || error == asio::error::try_again
+  return error == asio::error::would_block || error == asio::error::try_again ||
+                 error == asio::error::no_buffer_space
              ? NetError::WouldBlock
              : NetError::Send;
 }
@@ -26,6 +27,9 @@ Result<void, NetError> UdpEndpoint::ensure_open() {
   if (error) {
     return Result<void, NetError>::err(NetError::Bind);
   }
+  // WiFi drivers can briefly stop accepting a paced video burst.
+  asio::error_code buffer_error;
+  socket_.set_option(asio::socket_base::send_buffer_size(1024 * 1024), buffer_error);
   return Result<void, NetError>::ok();
 }
 

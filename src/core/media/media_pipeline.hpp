@@ -26,8 +26,9 @@ class MediaSender {
  public:
   MediaSender(SessionId session_id, SessionCrypto& crypto, PacketScheduler& scheduler);
 
+  // Zero selects a bounded budget including backlog and this frame's wire time.
   std::size_t enqueue_video(const EncodedFrame& frame, SteadyClock::time_point now,
-                            Microseconds deadline = Microseconds{25'000});
+                            Microseconds deadline = Microseconds{0});
   void set_fec_ratio(double ratio) noexcept;
   [[nodiscard]] double fec_ratio() const noexcept;
   bool enqueue_audio(const AudioPacket& packet, SteadyClock::time_point now,
@@ -43,7 +44,8 @@ class MediaSender {
 class MediaReceiver {
  public:
   explicit MediaReceiver(SessionId session_id, SessionCrypto& crypto,
-                         ReassemblyConfig reassembly = {});
+                         ReassemblyConfig reassembly = {
+                             Microseconds{100'000}, 8, Microseconds{500'000}});
 
   std::optional<EncodedFrame> receive_video(const Datagram& encrypted,
                                             SteadyClock::time_point now);

@@ -130,6 +130,9 @@ void ControlledRuntime::stop() noexcept {
   crypto_.reset();
   rate_controller_.reset();
   encoder_bitrate_bps_ = 0;
+  video_stats_since_.reset();
+  video_stats_frames_ = 0;
+  video_stats_work_ms_ = 0.0;
   current_fec_ratio_ = 0.03;
   audio_encoder_.reset();
   audio_pending_.clear();
@@ -503,6 +506,7 @@ void ControlledRuntime::send_pending_video(SteadyClock::time_point now) {
   if (!media_sender_ || !session_ || !crypto_ || !backend_) {
     return;
   }
+  const auto started = SteadyClock::now();
   const auto frame = backend_->next_video();
   // Capturing/encoding may take longer than a packet's queue deadline.
   now = SteadyClock::now();
@@ -524,12 +528,9 @@ void ControlledRuntime::send_pending_video(SteadyClock::time_point now) {
     }
   }
   if (frame) {
-    // P-frames behind a paced IDR must survive until that IDR has left the
-    // queue. Dropping all of them at 25 ms otherwise causes an IDR loop.
-    const auto budget = frame->keyframe ? Microseconds{500'000} : std::clamp(
-        scheduler_->estimated_video_queue_delay() + Microseconds{25'000},
-        Microseconds{25'000}, Microseconds{500'000});
-    if (media_sender_->enqueue_video(*frame, now, budget) == 0) backend_->request_keyframe();
+    ++video_stats_frames_;
+    video_stats_work_ms_ += std::chrono::duration<double, std::milli>(now - started).count();
+    if (media_sender_->enqueue_video(*frame, now) == 0) backend_->request_keyframe();
   }
 }
 
@@ -650,6 +651,7 @@ void ControlledRuntime::tick() {
     last_gamepad_receive_.reset();
   }
   tick_confirmation_grace(now);
+  if (!video_stats_since_) video_stats_since_ = now;
   send_heartbeat(now);
   send_pending_rumble();
   send_pending_audio(now);
@@ -679,6 +681,18 @@ void ControlledRuntime::tick() {
           .count()) /
                          1000.0;
   sample.controller_connected = true;
+  const auto stats_now = SteadyClock::now();
+  const auto stats_seconds = std::chrono::duration<double>(stats_now - *video_stats_since_).count();
+  if (stats_seconds >= 1.0) {
+    std::clog << "video host: encoded_fps=" << video_stats_frames_ / stats_seconds
+              << " capture_encode_ms=" << (video_stats_frames_ == 0 ? 0.0 :
+                  video_stats_work_ms_ / static_cast<double>(video_stats_frames_))
+              << " bitrate_mbps=" << static_cast<double>(encoder_bitrate_bps_) / 1'000'000.0
+              << " queue_ms=" << sample.send_queue_ms << '\n';
+    video_stats_since_ = stats_now;
+    video_stats_frames_ = 0;
+    video_stats_work_ms_ = 0.0;
+  }
   telemetry_.push(sample);
   if (const auto snapshot = telemetry_.publish_if_due(now); snapshot && telemetry_callback_) {
     telemetry_callback_(*snapshot);
@@ -724,6 +738,9 @@ void ControlledRuntime::clear_peer_session() noexcept {
   crypto_.reset();
   rate_controller_.reset();
   encoder_bitrate_bps_ = 0;
+  video_stats_since_.reset();
+  video_stats_frames_ = 0;
+  video_stats_work_ms_ = 0.0;
   current_fec_ratio_ = 0.03;
   audio_encoder_.reset();
   audio_pending_.clear();

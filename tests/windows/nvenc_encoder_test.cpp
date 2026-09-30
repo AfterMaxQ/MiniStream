@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <iostream>
 
 using namespace ministream;
 
@@ -29,4 +30,12 @@ TEST_CASE("NVENC encodes one captured BGRA frame", "[.hardware]") {
   REQUIRE(encoded->keyframe);
   REQUIRE_FALSE(encoded->bytes.empty());
   REQUIRE_FALSE(encoder.codec_config().parameter_sets.empty());
+  const auto start = SteadyClock::now();
+  for (unsigned index = 0; index < 60; ++index) {
+    const auto next = encoder.encode(*frame, 16'667ULL * (index + 1));
+    REQUIRE(next);
+    REQUIRE_FALSE(next->bytes.empty());
+  }
+  const auto elapsed = std::chrono::duration<double, std::milli>(SteadyClock::now() - start).count();
+  std::cout << "NVENC 1080p repeated encode: " << elapsed / 60.0 << " ms/frame\n";
 }

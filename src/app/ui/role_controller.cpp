@@ -274,7 +274,7 @@ bool RoleController::remoteInputActive() const noexcept {
 }
 
 QStringList RoleController::qualityOptions() const {
-  return {QStringLiteral("Smooth · 1080p60 · H.264"),
+  return {QStringLiteral("Smooth · 1080p60 · HEVC / H.264"),
           QStringLiteral("Sharp · 1440p60 · HEVC"),
           QStringLiteral("Ultra · 4K60 · HEVC")};
 }

@@ -185,8 +185,12 @@ Result<void, VideoEncodeError> VideoToolboxEncoder::start(VideoEncodeConfig conf
       (__bridge NSString*)kCVPixelBufferHeightKey: @(config.height),
       (__bridge NSString*)kCVPixelBufferIOSurfacePropertiesKey: @{},
   };
-  NSDictionary* specification = @{
-      (__bridge NSString*)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: @YES};
+  NSMutableDictionary* specification = [@{
+      (__bridge NSString*)kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: @YES}
+      mutableCopy];
+  if (config.codec == VideoCodec::H264) {
+    specification[(__bridge NSString*)kVTVideoEncoderSpecification_EnableLowLatencyRateControl] = @YES;
+  }
   if (VTCompressionSessionCreate(kCFAllocatorDefault, config.width, config.height, codec,
                                  (__bridge CFDictionaryRef)specification,
                                  (__bridge CFDictionaryRef)source_attributes, nullptr,
@@ -198,6 +202,8 @@ Result<void, VideoEncodeError> VideoToolboxEncoder::start(VideoEncodeConfig conf
   VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_RealTime, kCFBooleanTrue);
   VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_AllowFrameReordering,
                        kCFBooleanFalse);
+  VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_MaxFrameDelayCount,
+                       (__bridge CFTypeRef)@1);
   VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_AverageBitRate,
                        (__bridge CFTypeRef)@(config.bitrate_bps));
   VTSessionSetProperty(impl_->session, kVTCompressionPropertyKey_ExpectedFrameRate,

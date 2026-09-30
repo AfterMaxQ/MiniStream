@@ -31,6 +31,23 @@ FEC, bounded packet scheduling, Opus audio, input and telemetry
 Windows 保持 D3D11 纹理，在 macOS 保持 `CVPixelBuffer`/Metal 纹理，QML
 控件与视频画面位于同一个窗口。
 
+## 画质与网络
+
+连接前通过 **Quality** 选择档位，默认使用 Smooth。两端同时支持 HEVC 时，
+1080p 优先使用 HEVC；否则使用 H.264。1440p 和 4K 需要两端支持 HEVC。
+
+| 档位 | 分辨率与目标帧率 | 起始码率 | 自适应范围 |
+|---|---|---|---|
+| Smooth | 1920×1080，60 fps | 8 Mbps | 2–20 Mbps |
+| Sharp | 2560×1440，60 fps | 16 Mbps | 4–40 Mbps |
+| Ultra | 3840×2160，60 fps | 24 Mbps | 8–60 Mbps |
+
+码率根据队列积压、丢包和恢复情况调整，FEC 与协议开销额外占用带宽。
+Wi-Fi 串流先使用 Smooth；网络稳定后可选择更高分辨率。实际帧率取决于
+桌面更新、设备性能和网络吞吐。静止桌面只发送变化的画面。
+
+HDR 使用 HEVC Main10，并要求两端及被共享显示器支持 HDR。
+
 ## 使用
 
 1. 在准备共享画面的设备上打开 **Allow control**，确认 Video、Audio、Input
@@ -47,17 +64,16 @@ Windows 保持 D3D11 纹理，在 macOS 保持 `CVPixelBuffer`/Metal 纹理，QM
 游戏菜单快捷键冲突，远程输入开启时 Esc 和 F11 会发送到远端；退出控制请
 点击 **Use this device**，也可以使用始终由本机处理的保留退出组合键：
 
-- Windows/Linux：`Ctrl+Alt+R` 进入远程输入，`Ctrl+Alt+Shift+R` 退出；
+- Windows：`Ctrl+Alt+R` 进入远程输入，`Ctrl+Alt+Shift+R` 退出；
 - macOS：`⌘+Option+R` 进入远程输入，`⌘+Option+Shift+R` 退出；
 - `F11` 切换全屏，非远程输入模式下 `Esc` 退出全屏。
 
-两端必须运行相同的协议版本。v0.2.2 至 v0.2.4 使用相同协议；它们不与
-v0.2.1 及更早版本建立会话。升级旧版本时请同时替换控制端和被控制端。
+两端必须使用兼容的协议版本。升级时请同时更新控制端和被控制端。
 
 ## 从源码构建
 
-日常使用统一的 [构建 presets 与目录说明](docs/development.md)。Windows 和 macOS
-从同一个分支开发，生成文件统一放到 `out/`；历史版本文件夹只用于回溯。
+Windows 和 macOS 使用 [CMake presets](CMakePresets.json)，构建输出位于
+`out/build/windows/` 和 `out/build/macos/`。
 
 ### Windows
 
@@ -70,12 +86,9 @@ v0.2.1 及更早版本建立会话。升级旧版本时请同时替换控制端�
 $env:QTDIR = "<Qt 6.11.2>/msvc2022_64"
 $env:MINISTREAM_NVENC_SDK_ROOT = "<Video Codec SDK 13.1>"
 
-cmake -S . -B build-ui -G "Visual Studio 17 2022" -A x64 `
-  -DMINISTREAM_BUILD_UI=ON `
-  -DCMAKE_PREFIX_PATH="$env:QTDIR" `
-  -DMINISTREAM_NVENC_SDK_ROOT="$env:MINISTREAM_NVENC_SDK_ROOT"
-cmake --build build-ui --config Debug --parallel 4
-ctest --test-dir build-ui -C Debug --output-on-failure
+cmake --preset windows
+cmake --build --preset windows
+cpack --preset windows
 ```
 
 没有 ViGEmBus 时仍可使用键盘和鼠标。需要手柄时安装 ViGEmBus；发布安装
@@ -85,21 +98,20 @@ ctest --test-dir build-ui -C Debug --output-on-failure
 Windows Defender Firewall 中为程序允许 Private Network 入站流量，才能发现
 或接受连接。
 
-Windows 被控制端当前使用 SDR 编码路径。开启 Windows HDR 时，应用会在
-**Allow control** 前提示关闭该显示器的 HDR，不会广播一个无法输出画面的
-会话；Windows 作为控制端接收视频不受此限制。
+Windows 被控制端需要支持 NVENC 的 NVIDIA 显卡。SDR 与 HDR 桌面通过
+D3D11 转换后交给硬件编码器；HDR 能力会在开始共享前进行检测。
 
 ### macOS
 
-需要 Xcode、CMake 3.30 或更高版本、Qt 6.11.2 macOS 套件和 `libsodium`。
-例如先执行 `brew install libsodium`，然后在 Mac 上构建：
+需要 macOS 15 或更高版本、Xcode Command Line Tools、CMake 3.30 或更高版本、
+Ninja、Qt 6.11.2 macOS 套件和 `libsodium`。Qt 默认安装目录为
+`$HOME/Qt/6.11.2/macos`，可用 `-DCMAKE_PREFIX_PATH` 覆盖。
 
 ```sh
-cmake -S . -B build-macos -G Xcode \
-  -DMINISTREAM_BUILD_UI=ON \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.2/macos"
-cmake --build build-macos --config Release
-ctest --test-dir build-macos -C Release --output-on-failure
+brew install cmake ninja libsodium
+cmake --preset macos
+cmake --build --preset macos
+cpack --preset macos
 ```
 
 首次使用“Allow control”时，macOS 可能要求授予本地网络、屏幕录制和辅助功能
@@ -115,51 +127,19 @@ ctest --test-dir build-macos -C Release --output-on-failure
 发布包包含统一的 `ministream` 应用和 Qt/QML 运行时，最终用户不需要安装
 Qt、CMake、SDL、Opus、libsodium、Leopard-RS 或编译器。
 
-### Windows 安装器
-
-在已配置 Qt 和 NVIDIA SDK 的 Windows 环境中：
-
-```powershell
-cmake -S . -B build-release -G "Visual Studio 17 2022" -A x64 `
-  -DMINISTREAM_BUILD_TESTS=OFF `
-  -DMINISTREAM_BUILD_TOOLS=OFF `
-  -DMINISTREAM_BUILD_UI=ON `
-  -DMINISTREAM_ENABLE_PACKAGING=ON `
-  -DCMAKE_PREFIX_PATH="$env:QTDIR" `
-  -DMINISTREAM_NVENC_SDK_ROOT="$env:MINISTREAM_NVENC_SDK_ROOT"
-cmake --build build-release --config Release
-cpack --config build-release/CPackConfig.cmake -C Release
-```
-
-输出到 `out/packages/<版本>/`，文件名为 `MiniStream-<版本>-Windows-x64-Setup.exe`。安装器包含 Qt/QML、MSVC runtime、
+Windows 输出到 `out/packages/<版本>/`，文件名为 `MiniStream-<版本>-Windows-x64-Setup.exe`。安装器包含 Qt/QML、MSVC runtime、
 libsodium 和 ViGEmBus 安装程序；NVIDIA 显卡驱动仍由系统提供，不随包安装。
 
-### macOS DMG
-
-在 Mac 上执行：
-
-```sh
-cmake -S . -B build-release -G Xcode \
-  -DMINISTREAM_BUILD_TESTS=OFF \
-  -DMINISTREAM_BUILD_TOOLS=OFF \
-  -DMINISTREAM_BUILD_UI=ON \
-  -DMINISTREAM_ENABLE_PACKAGING=ON \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.11.2/macos"
-cmake --build build-release --config Release
-cpack --config build-release/CPackConfig.cmake -C Release
-```
-
-输出到 `out/packages/<版本>/MiniStream-<版本>-macOS-<架构>.dmg`。打开 DMG 后将 `MiniStream.app` 拖到
+macOS 输出到 `out/packages/<版本>/MiniStream-<版本>-macOS-<架构>.dmg`。打开 DMG 后将 `MiniStream.app` 拖到
 `Applications`，再从 Applications 启动。
 
 ## 当前版本边界
 
 - 仅支持同一局域网内的发现和连接，不包含账号、云服务、NAT 穿透或多控制器。
-- Windows 被控制端当前只接受 SDR 桌面捕获；4K60、HEVC Main10/HDR10 和
-  长时间串流仍需要在目标 Windows/macOS 设备及显示器上单独验收。
-- 鼠标移动使用窗口内位置差值，不是系统级 raw relative mouse；桌面操作可用，
-  FPS/TPS 的无限连续转向尚不属于当前版本能力。
+- 视频使用 H.264/HEVC 硬件编码与解码，不使用软件视频回退。
+- 串流页面支持 Desktop 和 Game 鼠标模式；Game 模式锁定光标并发送相对移动。
 - macOS 的屏幕录制、辅助功能和音频权限由系统控制；Windows 手柄输入需要
   ViGEmBus，键盘鼠标不依赖该驱动。
 
-发布检查项见 [`docs/release/v0.2.2-connection-input-reliability-checklist.md`](docs/release/v0.2.2-connection-input-reliability-checklist.md)。
+从终端启动应用时，每秒输出编码帧率、解码提交帧率、处理耗时、发送队列和
+丢包统计。解码提交帧率表示交给解码器的帧数，屏幕显示帧率取决于解码和渲染。

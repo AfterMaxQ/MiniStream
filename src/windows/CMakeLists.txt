@@ -54,6 +54,7 @@ if(MINISTREAM_BUILD_UI)
     PRIVATE ministream_app ministream_windows_platform Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::GuiPrivate
   )
   ministream_add_qml_ui(ministream)
+  target_link_options(ministream PRIVATE "/MANIFESTUAC:level='requireAdministrator'")
 endif()
 if(MINISTREAM_BUILD_UI)
   ministream_set_warnings(ministream)

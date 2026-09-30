@@ -284,13 +284,24 @@ TEST_CASE("loopback control session completes handshake pairing and media") {
   REQUIRE(remote.streaming());
   REQUIRE(controlled.streaming());
   REQUIRE(remote_backend_ptr->configured.has_value());
-  REQUIRE(controlled_backend_ptr->bitrate == 20'000'000);
+  REQUIRE(controlled_backend_ptr->bitrate == 8'000'000);
 
   remote.toggle_input();
   REQUIRE(remote.remote_input_active());
   controlled_backend_ptr->reject_first_input = true;
   const DesktopInput key_down{DesktopInputKind::Key, 0, 0, 0,
                               static_cast<std::uint16_t>(DesktopKey::W)};
+  REQUIRE(remote.route_input(key_down));
+  for (unsigned attempt = 0; attempt < 200U && controlled_backend_ptr->input_injection_attempts == 0;
+       ++attempt) {
+    pump(controlled, remote);
+  }
+  REQUIRE(controlled_backend_ptr->input_injection_attempts == 1);
+  REQUIRE(controlled_backend_ptr->injected_inputs.empty());
+  REQUIRE(controlled.streaming());
+  REQUIRE(remote.streaming());
+  // Transport acknowledgement does not repeat a rejected native injection.
+  // A new input event still works without restarting the media session.
   REQUIRE(remote.route_input(key_down));
   for (unsigned attempt = 0; attempt < 200U && controlled_backend_ptr->injected_inputs.empty();
        ++attempt) {

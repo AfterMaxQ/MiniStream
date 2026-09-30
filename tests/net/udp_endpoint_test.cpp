@@ -52,6 +52,7 @@ TEST_CASE("UDP endpoint classifies temporary send backpressure separately") {
 
   REQUIRE(detail::classify_send_error(would_block) == NetError::WouldBlock);
   REQUIRE(detail::classify_send_error(try_again) == NetError::WouldBlock);
+  REQUIRE(detail::classify_send_error(asio::error::no_buffer_space) == NetError::WouldBlock);
   REQUIRE(detail::classify_send_error(network_unreachable) == NetError::Send);
 }
 

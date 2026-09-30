@@ -50,6 +50,23 @@ std::size_t MediaSender::enqueue_video(const EncodedFrame& frame,
   const auto fec_frame = VideoFecEncoder{session_id_}.encode_frame(frame, fec_ratio_);
   const auto packets = fec_frame.video_datagrams.size() + fec_frame.fec_datagrams.size();
   if (packets > scheduler_.remaining_capacity(Priority::Video)) return 0;
+  if (deadline <= Microseconds{0}) {
+    std::uint64_t wire_bytes{};
+    for (const auto& packet : fec_frame.video_datagrams) {
+      wire_bytes += packet.bytes.size() + kSessionCryptoOverheadBytes - kCommonHeaderBytes;
+    }
+    for (const auto& packet : fec_frame.fec_datagrams) {
+      wire_bytes += packet.bytes.size() + kSessionCryptoOverheadBytes - kCommonHeaderBytes;
+    }
+    const auto rate = scheduler_.video_rate_bps();
+    const auto serialization_us = rate == 0 ? 500'000.0L :
+        std::ceil(static_cast<long double>(wire_bytes) * 8'000'000.0L / rate);
+    const auto budget_us = std::clamp(
+        serialization_us + scheduler_.estimated_video_queue_delay().count() + 25'000.0L,
+        25'000.0L, 500'000.0L);
+    deadline = frame.keyframe ? Microseconds{500'000} :
+        Microseconds{static_cast<std::int64_t>(budget_us)};
+  }
   // An IDR can be much larger than a P-frame. Allow it to traverse the paced
   // queue as a whole; never evict its first shards to enqueue its last shards.
   for (const auto& packet : fec_frame.video_datagrams) {

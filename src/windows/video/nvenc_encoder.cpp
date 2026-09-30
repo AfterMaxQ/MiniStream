@@ -26,6 +26,9 @@ struct NvencEncoder::Impl {
   void* session{};
   ID3D11Device* device{};
   ID3D11DeviceContext* context{};
+  Microsoft::WRL::ComPtr<ID3D11Texture2D> input_texture;
+  NV_ENC_REGISTERED_PTR registered_input{};
+  NV_ENC_OUTPUT_PTR output_buffer{};
 #endif
 };
 
@@ -194,6 +197,38 @@ Result<void, NvencError> NvencEncoder::initialize(
     return Result<void, NvencError>::err(NvencError::Initialize);
   }
   impl_->encode_config = encode_config;
+  D3D11_TEXTURE2D_DESC input_description{};
+  input_description.Width = config.width;
+  input_description.Height = config.height;
+  input_description.MipLevels = 1;
+  input_description.ArraySize = 1;
+  input_description.Format = config.hdr10 ? DXGI_FORMAT_R10G10B10A2_UNORM
+                                         : DXGI_FORMAT_B8G8R8A8_UNORM;
+  input_description.SampleDesc.Count = 1;
+  input_description.Usage = D3D11_USAGE_DEFAULT;
+  if (FAILED(device->CreateTexture2D(&input_description, nullptr, &impl_->input_texture))) {
+    stop();
+    return Result<void, NvencError>::err(NvencError::RegisterResource);
+  }
+  NV_ENC_REGISTER_RESOURCE resource{};
+  resource.version = NV_ENC_REGISTER_RESOURCE_VER;
+  resource.resourceType = NV_ENC_INPUT_RESOURCE_TYPE_DIRECTX;
+  resource.width = config.width;
+  resource.height = config.height;
+  resource.resourceToRegister = impl_->input_texture.Get();
+  resource.bufferFormat = config.hdr10 ? NV_ENC_BUFFER_FORMAT_ABGR10 : NV_ENC_BUFFER_FORMAT_ARGB;
+  if (impl_->api.nvEncRegisterResource(impl_->session, &resource) != NV_ENC_SUCCESS) {
+    stop();
+    return Result<void, NvencError>::err(NvencError::RegisterResource);
+  }
+  impl_->registered_input = resource.registeredResource;
+  NV_ENC_CREATE_BITSTREAM_BUFFER output{};
+  output.version = NV_ENC_CREATE_BITSTREAM_BUFFER_VER;
+  if (impl_->api.nvEncCreateBitstreamBuffer(impl_->session, &output) != NV_ENC_SUCCESS) {
+    stop();
+    return Result<void, NvencError>::err(NvencError::Encode);
+  }
+  impl_->output_buffer = output.bitstreamBuffer;
   impl_->codec_config = {config.codec, config.width, config.height, config.fps,
                          config.hdr10, {}};
   return Result<void, NvencError>::ok();
@@ -215,32 +250,27 @@ Result<EncodedFrame, NvencError> NvencEncoder::encode(
     return Result<EncodedFrame, NvencError>::err(
         ready() ? NvencError::UnsupportedFormat : NvencError::Unavailable);
   }
-  NV_ENC_REGISTER_RESOURCE resource{};
-  resource.version = NV_ENC_REGISTER_RESOURCE_VER;
-  resource.resourceType = NV_ENC_INPUT_RESOURCE_TYPE_DIRECTX;
-  resource.width = frame.width;
-  resource.height = frame.height;
-  resource.resourceToRegister = frame.texture.Get();
-  resource.bufferFormat = impl_->config.hdr10 ? NV_ENC_BUFFER_FORMAT_ABGR10 : NV_ENC_BUFFER_FORMAT_ARGB;
-  if (impl_->api.nvEncRegisterResource(impl_->session, &resource) != NV_ENC_SUCCESS) {
-    return Result<EncodedFrame, NvencError>::err(NvencError::RegisterResource);
-  }
-
+  const auto invalidate = [this] {
+    // A failed completion leaves buffer ownership uncertain. Tear down the
+    // driver session before releasing or reusing its mapped GPU resources.
+    impl_->api.nvEncDestroyEncoder(impl_->session);
+    impl_->session = nullptr;
+    impl_->registered_input = nullptr;
+    impl_->output_buffer = nullptr;
+    impl_->input_texture.Reset();
+    stop();
+  };
+  // The synchronous lock below finishes the previous encode before this
+  // persistent surface is reused. Registration and buffer allocation happen
+  // once per session instead of once per captured frame.
+  impl_->context->CopyResource(impl_->input_texture.Get(), frame.texture.Get());
   NV_ENC_MAP_INPUT_RESOURCE mapped{};
   mapped.version = NV_ENC_MAP_INPUT_RESOURCE_VER;
-  mapped.registeredResource = resource.registeredResource;
+  mapped.registeredResource = impl_->registered_input;
   const auto mapped_status = impl_->api.nvEncMapInputResource(impl_->session, &mapped);
   if (mapped_status != NV_ENC_SUCCESS) {
-    impl_->api.nvEncUnregisterResource(impl_->session, resource.registeredResource);
+    invalidate();
     return Result<EncodedFrame, NvencError>::err(NvencError::RegisterResource);
-  }
-
-  NV_ENC_CREATE_BITSTREAM_BUFFER output{};
-  output.version = NV_ENC_CREATE_BITSTREAM_BUFFER_VER;
-  if (impl_->api.nvEncCreateBitstreamBuffer(impl_->session, &output) != NV_ENC_SUCCESS) {
-    impl_->api.nvEncUnmapInputResource(impl_->session, mapped.mappedResource);
-    impl_->api.nvEncUnregisterResource(impl_->session, resource.registeredResource);
-    return Result<EncodedFrame, NvencError>::err(NvencError::Encode);
   }
 
   NV_ENC_PIC_PARAMS picture{};
@@ -249,7 +279,7 @@ Result<EncodedFrame, NvencError> NvencEncoder::encode(
   picture.inputHeight = frame.height;
   picture.inputPitch = frame.width * 4;  // BGRA pitch is measured in bytes.
   picture.inputBuffer = mapped.mappedResource;
-  picture.outputBitstream = output.bitstreamBuffer;
+  picture.outputBitstream = impl_->output_buffer;
   picture.bufferFmt = mapped.mappedBufferFmt;
   picture.pictureStruct = NV_ENC_PIC_STRUCT_FRAME;
   picture.inputTimeStamp = timestamp_us;
@@ -258,17 +288,19 @@ Result<EncodedFrame, NvencError> NvencEncoder::encode(
                               : 0;
   impl_->force_idr = false;
   const auto encoded = impl_->api.nvEncEncodePicture(impl_->session, &picture);
-  if (encoded != NV_ENC_SUCCESS && encoded != NV_ENC_ERR_NEED_MORE_INPUT) {
-    impl_->api.nvEncDestroyBitstreamBuffer(impl_->session, output.bitstreamBuffer);
-    impl_->api.nvEncUnmapInputResource(impl_->session, mapped.mappedResource);
-    impl_->api.nvEncUnregisterResource(impl_->session, resource.registeredResource);
+  if (encoded != NV_ENC_SUCCESS) {
+    invalidate();
     return Result<EncodedFrame, NvencError>::err(NvencError::Encode);
   }
 
   NV_ENC_LOCK_BITSTREAM lock{};
   lock.version = NV_ENC_LOCK_BITSTREAM_VER;
-  lock.outputBitstream = output.bitstreamBuffer;
+  lock.outputBitstream = impl_->output_buffer;
   const auto locked = impl_->api.nvEncLockBitstream(impl_->session, &lock);
+  if (locked != NV_ENC_SUCCESS) {
+    invalidate();
+    return Result<EncodedFrame, NvencError>::err(NvencError::LockBitstream);
+  }
   EncodedFrame result;
   if (locked == NV_ENC_SUCCESS && lock.bitstreamBufferPtr && lock.bitstreamSizeInBytes > 0) {
     result.frame_id = static_cast<std::uint32_t>(frame.frame_id);
@@ -282,14 +314,14 @@ Result<EncodedFrame, NvencError> NvencEncoder::encode(
       if (!sets.empty()) impl_->codec_config.parameter_sets = std::move(sets);
     }
   }
-  if (locked == NV_ENC_SUCCESS) {
-    impl_->api.nvEncUnlockBitstream(impl_->session, output.bitstreamBuffer);
-  }
-  impl_->api.nvEncDestroyBitstreamBuffer(impl_->session, output.bitstreamBuffer);
-  impl_->api.nvEncUnmapInputResource(impl_->session, mapped.mappedResource);
-  impl_->api.nvEncUnregisterResource(impl_->session, resource.registeredResource);
-  if (locked != NV_ENC_SUCCESS) {
+  if (impl_->api.nvEncUnlockBitstream(impl_->session, impl_->output_buffer) != NV_ENC_SUCCESS ||
+      impl_->api.nvEncUnmapInputResource(impl_->session, mapped.mappedResource) != NV_ENC_SUCCESS) {
+    invalidate();
     return Result<EncodedFrame, NvencError>::err(NvencError::LockBitstream);
+  }
+  if (result.bytes.empty()) {
+    invalidate();
+    return Result<EncodedFrame, NvencError>::err(NvencError::Encode);
   }
   return Result<EncodedFrame, NvencError>::ok(std::move(result));
 #endif
@@ -361,6 +393,15 @@ void NvencEncoder::request_idr() noexcept {
 void NvencEncoder::stop() noexcept {
 #if MINISTREAM_HAVE_NVENC_SDK
   if (impl_ && impl_->session && impl_->api.nvEncDestroyEncoder) {
+    if (impl_->output_buffer) {
+      impl_->api.nvEncDestroyBitstreamBuffer(impl_->session, impl_->output_buffer);
+      impl_->output_buffer = nullptr;
+    }
+    if (impl_->registered_input) {
+      impl_->api.nvEncUnregisterResource(impl_->session, impl_->registered_input);
+      impl_->registered_input = nullptr;
+    }
+    impl_->input_texture.Reset();
     impl_->api.nvEncDestroyEncoder(impl_->session);
   }
   if (impl_) {

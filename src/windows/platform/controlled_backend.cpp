@@ -248,7 +248,8 @@ std::optional<EncodedFrame> WindowsControlledBackend::next_video() {
     const auto bitrate = impl_->bitrate_bps != 0
                              ? impl_->bitrate_bps
                              : static_cast<std::uint32_t>(profile.initial_bitrate_bps);
-    const NvencConfig config{codec, frame.width, frame.height, fps, bitrate, false};
+    const NvencConfig config{codec, frame.width, frame.height, fps, bitrate,
+                             impl_->configured && impl_->requested.hdr10};
     if (!impl_->encoder->initialize(impl_->capture->device(), impl_->capture->context(), config)) {
       return std::nullopt;
     }

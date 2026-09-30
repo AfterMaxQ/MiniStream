@@ -219,8 +219,7 @@ void RemoteRuntime::finish_streaming() {
   session_keys_ = *keys;
   crypto_ = std::make_unique<SessionCrypto>(
       session_id_, session_keys_->tx, session_keys_->rx, 0x4D535443U, 0x4D535448U);
-  media_receiver_ = std::make_unique<MediaReceiver>(session_id_, *crypto_,
-      ReassemblyConfig{Microseconds{25'000}, 4, Microseconds{500'000}});
+  media_receiver_ = std::make_unique<MediaReceiver>(session_id_, *crypto_);
   audio_decoder_ = std::make_unique<OpusDecoder48kStereo>();
   if (!audio_decoder_->ready()) {
     disconnect_session();
@@ -438,6 +437,7 @@ void RemoteRuntime::decode_video_frame(const EncodedFrame& frame) {
     request_keyframe(SteadyClock::now());
     return;
   }
+  const auto started = SteadyClock::now();
   if (!backend_->decode_video(frame.bytes, frame.capture_timestamp_us)) {
     awaiting_keyframe_ = true;
     video_status_ = "Recovering after a video decode error";
@@ -445,6 +445,8 @@ void RemoteRuntime::decode_video_frame(const EncodedFrame& frame) {
     return;
   }
   last_video_frame_id_ = frame.frame_id;
+  ++video_stats_frames_;
+  video_stats_work_ms_ += std::chrono::duration<double, std::milli>(SteadyClock::now() - started).count();
   awaiting_keyframe_ = false;
   video_status_ = "Waiting for the video surface";
 }
@@ -557,7 +559,7 @@ void RemoteRuntime::tick() {
     }
   }
   if (state_ == RoleState::RemoteConnecting || pairing() || streaming()) {
-    for (const auto& incoming : session_->try_receive_batch(128)) {
+    for (const auto& incoming : session_->try_receive_batch(512)) {
       if (session_->peer_locked() && !session_->matches_peer(incoming)) {
         continue;
       }
@@ -621,6 +623,7 @@ void RemoteRuntime::tick() {
     }
   }
   if (streaming()) {
+    if (!video_stats_since_) video_stats_since_ = now;
     send_feedback(now);
     if (media_receiver_) {
       StreamSample sample;
@@ -636,6 +639,17 @@ void RemoteRuntime::tick() {
           std::chrono::duration_cast<Microseconds>(audio_jitter_.buffered_duration()).count()) /
                                1000.0;
       sample.controller_connected = true;
+      const auto stats_seconds = std::chrono::duration<double>(now - *video_stats_since_).count();
+      if (stats_seconds >= 1.0) {
+        std::clog << "video remote: submitted_fps=" << video_stats_frames_ / stats_seconds
+                  << " decode_submit_ms=" << (video_stats_frames_ == 0 ? 0.0 :
+                      video_stats_work_ms_ / static_cast<double>(video_stats_frames_))
+                  << " received_packets=" << received << " lost_packets=" << lost
+                  << " unrecoverable_frames=" << sample.fec_unrecoverable << '\n';
+        video_stats_since_ = now;
+        video_stats_frames_ = 0;
+        video_stats_work_ms_ = 0.0;
+      }
       telemetry_.push(sample);
       if (const auto snapshot = telemetry_.publish_if_due(now); snapshot &&
           telemetry_callback_) {
@@ -772,6 +786,9 @@ void RemoteRuntime::disconnect_session() noexcept {
   crypto_.reset();
   audio_decoder_.reset();
   codec_configured_ = false;
+  video_stats_since_.reset();
+  video_stats_frames_ = 0;
+  video_stats_work_ms_ = 0.0;
   active_codec_config_.reset();
   awaiting_keyframe_ = true;
   last_video_frame_id_.reset();

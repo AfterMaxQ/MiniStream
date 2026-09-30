@@ -76,7 +76,7 @@ void output_callback(void* refcon, void*, OSStatus status, VTDecodeInfoFlags,
   }
   auto* impl = static_cast<VideoToolboxDecoder::Impl*>(refcon);
   std::scoped_lock lock(impl->mutex);
-  impl->last_output_status = status;
+  if (status != noErr) impl->last_output_status = status;
   if (status != noErr || image == nullptr) return;
   if (impl->config.hdr10) {
     CVBufferSetAttachment(image, kCVImageBufferColorPrimariesKey,
@@ -216,10 +216,14 @@ Result<void, VideoDecodeError> VideoToolboxDecoder::decode(
   // block the UI/media tick waiting for every submitted frame to finish.
   {
     std::scoped_lock lock(impl_->mutex);
-    impl_->last_output_status = noErr;
+    if (std::exchange(impl_->last_output_status, noErr) != noErr) {
+      CFRelease(sample);
+      return Result<void, VideoDecodeError>::err(VideoDecodeError::Decode);
+    }
   }
-  const auto status = VTDecompressionSessionDecodeFrame(impl_->session, sample, 0,
-                                                        nullptr, nullptr);
+  const auto flags = kVTDecodeFrame_EnableAsynchronousDecompression;
+  const auto status = VTDecompressionSessionDecodeFrame(impl_->session, sample, flags,
+                                                       nullptr, nullptr);
   CFRelease(sample);
   return status == noErr ? Result<void, VideoDecodeError>::ok()
                          : Result<void, VideoDecodeError>::err(VideoDecodeError::Decode);
@@ -248,6 +252,7 @@ void VideoToolboxDecoder::stop() noexcept {
     impl_->format = nullptr;
   }
   std::scoped_lock lock(impl_->mutex);
+  impl_->last_output_status = noErr;
   if (impl_->latest) {
     CVPixelBufferRelease(impl_->latest);
     impl_->latest = nullptr;

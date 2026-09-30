@@ -123,6 +123,9 @@ class ControlledRuntime {
   std::optional<FeedbackReport> last_feedback_report_;
   std::unique_ptr<RateController> rate_controller_;
   StreamAggregator telemetry_;
+  std::optional<SteadyClock::time_point> video_stats_since_;
+  std::uint64_t video_stats_frames_{};
+  double video_stats_work_ms_{};
   std::function<void(const StreamSnapshot&)> telemetry_callback_;
   SessionId session_id_{1};
 };

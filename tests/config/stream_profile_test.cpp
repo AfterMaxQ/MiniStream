@@ -28,13 +28,14 @@ RemoteCapabilities remote(bool h264, bool hevc, bool hdr10, std::uint32_t width,
 }
 }  // namespace
 
-TEST_CASE("built-in profiles retain the fixed alpha ladder") {
+TEST_CASE("built-in profiles allow WiFi congestion recovery without reducing frame rate") {
   const auto debug = stream_profile(StreamProfileId::Debug1080);
   REQUIRE(debug.width == 1920);
   REQUIRE(debug.height == 1080);
   REQUIRE(debug.codec == VideoCodec::H264);
   REQUIRE_FALSE(debug.hdr10);
-  REQUIRE(debug.initial_bitrate_bps == 20'000'000);
+  REQUIRE(debug.minimum_bitrate_bps == 2'000'000);
+  REQUIRE(debug.initial_bitrate_bps == 8'000'000);
 
   const auto balanced = stream_profile(StreamProfileId::Balanced1440);
   REQUIRE(balanced.width == 2560);
@@ -47,9 +48,9 @@ TEST_CASE("built-in profiles retain the fixed alpha ladder") {
   REQUIRE(quality.fps == 60);
   REQUIRE(quality.codec == VideoCodec::Hevc);
   REQUIRE(quality.hdr10);
-  REQUIRE(quality.minimum_bitrate_bps == 20'000'000);
-  REQUIRE(quality.initial_bitrate_bps == 50'000'000);
-  REQUIRE(quality.maximum_bitrate_bps == 80'000'000);
+  REQUIRE(quality.minimum_bitrate_bps == 8'000'000);
+  REQUIRE(quality.initial_bitrate_bps == 24'000'000);
+  REQUIRE(quality.maximum_bitrate_bps == 60'000'000);
 }
 
 TEST_CASE("profile selection uses the common H264 1080p capability") {
@@ -88,10 +89,21 @@ TEST_CASE("profile selection enables HDR only when both peers advertise it") {
   const auto sdr_fallback = select_common_stream_profile(
       host(capabilities, 3840, 2160, 60), remote(false, true, false, 3840, 2160, 60));
   REQUIRE(sdr_fallback.has_value());
-  REQUIRE(sdr_fallback->id == StreamProfileId::Balanced1440);
+  REQUIRE(sdr_fallback->id == StreamProfileId::Quality4K);
+  REQUIRE_FALSE(sdr_fallback->hdr10);
   const auto selected = select_common_stream_profile(
       host(capabilities, 3840, 2160, 60), remote(false, true, true, 3840, 2160, 60));
   REQUIRE(selected.has_value());
   REQUIRE(selected->id == StreamProfileId::Quality4K);
   REQUIRE(selected->hdr10);
+}
+
+TEST_CASE("1080p selects hardware HEVC when both peers support it") {
+  const auto selected = select_stream_profile(
+      host({true, true, false, true, true, false}, 3840, 2160, 60),
+      remote(true, true, false, 3840, 2160, 60), StreamProfileId::Debug1080);
+  REQUIRE(selected);
+  REQUIRE(selected->codec == VideoCodec::Hevc);
+  REQUIRE(selected->fps == 60);
+  REQUIRE(selected->width == 1920);
 }
