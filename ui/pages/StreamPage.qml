@@ -204,9 +204,18 @@ Item {
                 }
             }
             CheckBox {
+                id: clipboardCheck
                 text: "Share text clipboard"
                 checked: root.controller.sharedClipboard
                 onToggled: root.controller.sharedClipboard = checked
+                contentItem: Text {
+                    leftPadding: clipboardCheck.indicator.width + clipboardCheck.spacing
+                    text: clipboardCheck.text
+                    font: clipboardCheck.font
+                    color: "#FFFFFF"
+                    verticalAlignment: Text.AlignVCenter
+                    wrapMode: Text.WordWrap
+                }
             }
             CheckBox {
                 visible: root.gameMouse

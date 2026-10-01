@@ -65,7 +65,7 @@ Item {
             width: parent.width
             spacing: 8
             Rectangle { width: 6; height: 6; radius: 3; color: Tokens.success; anchors.verticalCenter: parent.verticalCenter }
-            SectionHeader { text: "Nearby devices · listening in the background" }
+            SectionHeader { text: "Nearby devices" }
         }
 
         Rectangle {
