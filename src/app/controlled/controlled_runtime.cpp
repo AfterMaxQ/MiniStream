@@ -38,11 +38,21 @@ ControlledRuntime::ControlledRuntime(std::unique_ptr<ControlledBackend> backend,
           return false;
         }
         if (input.kind == DesktopInputKind::ReleaseAll) {
+          input_enabled_ = false;
+          game_input_ = false;
           backend_->clear_input();
           backend_->clear_gamepad();
           last_gamepad_receive_.reset();
           return true;
         }
+        if (input.kind == DesktopInputKind::InputMode) {
+          game_input_ = (input.flags & kInputModeGame) != 0;
+          backend_->configure_input(game_input_, (input.flags & kInputModeEnglish) != 0);
+          input_enabled_ = true;
+          last_gamepad_receive_.reset();
+          return true;
+        }
+        if (!input_enabled_) return true;
         if (!backend_->inject_input(input)) {
           std::clog << "Remote input injection failed\n";
         }
@@ -151,6 +161,7 @@ void ControlledRuntime::stop() noexcept {
   audio_sequence_ = 0;
   gamepad_sequence_filter_ = GamepadSequenceFilter{};
   last_gamepad_receive_.reset();
+  input_enabled_ = game_input_ = false;
   reliable_input_receiver_.reset();
   discovery_.reset();
   last_discovery_error_.reset();
@@ -334,11 +345,14 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
             send_input_ack(sequence);
           }
         } else if (const auto input = decode_desktop_input(*payload);
-                   input && backend_ &&
+                   input && backend_ && input_enabled_ &&
                    (input->kind == DesktopInputKind::MouseMove ||
                     input->kind == DesktopInputKind::MouseWheel)) {
-          (void)backend_->inject_input(*input);
-        } else if (const auto gamepad = decode_gamepad_packet(*payload); gamepad && backend_ &&
+          if (input->kind != DesktopInputKind::MouseMove ||
+              ((input->flags & kDesktopMouseGame) != 0) == game_input_)
+            (void)backend_->inject_input(*input);
+        } else if (const auto gamepad = decode_gamepad_packet(*payload);
+                   gamepad && backend_ && input_enabled_ && game_input_ &&
                    gamepad_sequence_filter_.accept(gamepad->sequence)) {
           (void)backend_->submit_gamepad(gamepad->state);
           last_gamepad_receive_ = SteadyClock::now();
@@ -796,6 +810,7 @@ void ControlledRuntime::clear_peer_session() noexcept {
   }
   audio_sequence_ = 0;
   gamepad_sequence_filter_ = GamepadSequenceFilter{};
+  input_enabled_ = game_input_ = false;
   reliable_input_receiver_.reset();
   session_keys_.reset();
   authorization_transcript_.reset();

@@ -7,14 +7,14 @@ namespace ministream {
 RemoteInputRouter::RemoteInputRouter(InputCapture& capture, Sender sender)
     : capture_(capture), sender_(std::move(sender)) {}
 
-bool RemoteInputRouter::begin() {
+bool RemoteInputRouter::begin(bool gamepad_enabled) {
   if (active()) return true;
   if (!capture_.enter_remote()) {
     return false;
   }
   auto keyboard = capture_.capture(InputDevice::Keyboard);
   auto mouse = capture_.capture(InputDevice::Mouse);
-  auto gamepad = capture_.capture(InputDevice::Gamepad);
+  auto gamepad = gamepad_enabled ? capture_.capture(InputDevice::Gamepad) : std::nullopt;
   if (!keyboard || !mouse) {
     end();
     return false;

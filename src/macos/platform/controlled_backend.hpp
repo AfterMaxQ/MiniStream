@@ -24,6 +24,7 @@ class MacControlledBackend final : public ControlledBackend {
   [[nodiscard]] std::optional<PcmBlock> next_audio() override;
   bool inject_input(const DesktopInput& input) override;
   void clear_input() noexcept override;
+  void configure_input(bool game, bool english) override;
 
  private:
   struct Impl;

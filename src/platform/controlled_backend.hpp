@@ -33,6 +33,7 @@ class ControlledBackend {
   virtual void request_keyframe() noexcept {}
   [[nodiscard]] virtual std::optional<PcmBlock> next_audio() = 0;
   virtual bool inject_input(const DesktopInput& input) = 0;
+  virtual void configure_input(bool, bool) { clear_input(); clear_gamepad(); }
   virtual void clear_input() noexcept {}
   virtual bool submit_gamepad(const GamepadState&) { return false; }
   virtual void clear_gamepad() noexcept {}

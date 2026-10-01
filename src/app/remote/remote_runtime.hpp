@@ -75,6 +75,7 @@ class RemoteRuntime {
   void confirm_pairing();
   void cancel_pairing();
   void toggle_input();
+  void set_input_mode(bool game, bool english) { game_mode_ = game; english_keyboard_ = english; }
   void release_input();
   bool route_input(const DesktopInput& input);
   void tick();
@@ -141,6 +142,9 @@ class RemoteRuntime {
   std::unique_ptr<RemoteInputRouter> input_router_;
   InputCoalescer gamepad_coalescer_;
   ReliableControl reliable_input_;
+  bool game_mode_{true};
+  bool english_keyboard_{true};
+  std::optional<ControlSeq> pending_input_mode_;
   ClipboardChannel clipboard_;
   ClipboardChannel::Receiver clipboard_receiver_;
   bool clipboard_enabled_{true};

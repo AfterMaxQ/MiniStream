@@ -2,6 +2,7 @@
 
 #include "core/base/result.hpp"
 #include "core/input/desktop_input.hpp"
+#include "platform/input_language.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -22,6 +23,7 @@ class AccessibilityInput {
                                                           bool pressed) noexcept;
   Result<void, AccessibilityInputError> inject(const DesktopInput& input);
   void clear() noexcept;
+  void configure(bool game, bool english) { clear(); language_.setEnglish(game && english); }
 
  private:
   std::set<DesktopKey> pressed_keys_;
@@ -32,6 +34,7 @@ class AccessibilityInput {
   bool game_mouse_{};
   double restore_x_{};
   double restore_y_{};
+  InputLanguageGuard language_;
 };
 
 }  // namespace ministream

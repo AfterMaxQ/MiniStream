@@ -40,7 +40,7 @@ std::uint16_t get16(const std::byte* in) {
 
 std::vector<std::byte> encode_desktop_input(const DesktopInput& input) {
   if (input.kind == DesktopInputKind::MouseMove && !valid_mouse_move(input)) return {};
-  if (input.kind < DesktopInputKind::Key || input.kind > DesktopInputKind::ReleaseAll) {
+  if (input.kind < DesktopInputKind::Key || input.kind > DesktopInputKind::InputMode) {
     return {};
   }
   if (input.kind == DesktopInputKind::Key &&
@@ -56,6 +56,9 @@ std::vector<std::byte> encode_desktop_input(const DesktopInput& input) {
       (input.flags != 0 || input.x != 0 || input.y != 0 || input.data != 0)) {
     return {};
   }
+  if (input.kind == DesktopInputKind::InputMode &&
+      ((input.flags & ~(kInputModeGame | kInputModeEnglish)) ||
+       input.flags == kInputModeEnglish || input.x || input.y || input.data)) return {};
   std::vector<std::byte> bytes(kDesktopInputBytes);
   bytes[0] = static_cast<std::byte>(input.kind);
   put16(bytes.data() + 1, input.flags);
@@ -71,7 +74,7 @@ std::optional<DesktopInput> decode_desktop_input(std::span<const std::byte> byte
   }
   const auto raw_kind = std::to_integer<std::uint8_t>(bytes[0]);
   if (raw_kind < static_cast<std::uint8_t>(DesktopInputKind::Key) ||
-      raw_kind > static_cast<std::uint8_t>(DesktopInputKind::ReleaseAll)) {
+      raw_kind > static_cast<std::uint8_t>(DesktopInputKind::InputMode)) {
     return std::nullopt;
   }
   DesktopInput input;
@@ -95,6 +98,9 @@ std::optional<DesktopInput> decode_desktop_input(std::span<const std::byte> byte
       (input.flags != 0 || input.x != 0 || input.y != 0 || input.data != 0)) {
     return std::nullopt;
   }
+  if (input.kind == DesktopInputKind::InputMode &&
+      ((input.flags & ~(kInputModeGame | kInputModeEnglish)) ||
+       input.flags == kInputModeEnglish || input.x || input.y || input.data)) return std::nullopt;
   return input;
 }
 

@@ -20,6 +20,7 @@ Item {
         toolbarOpen = true
     }
     function resumeControl() {
+        captureError = ""
         toolbarOpen = false
         if (!controller.remoteInputActive) controller.toggleRemoteInput()
         forceActiveFocus()
@@ -145,16 +146,38 @@ Item {
                     onClicked: root.resumeControl()
                 }
                 AppButton {
-                    text: root.gameMouse ? "Mouse: Game" : "Mouse: Desktop"
-                    onClicked: root.controller.gameMode = !root.gameMouse
-                }
-                AppButton {
                     text: root.appWindow.visibility === Window.FullScreen ? "Exit fullscreen" : "Fullscreen"
                     onClicked: { root.controller.releaseRemoteInput(); root.appWindow.toggleFullscreen() }
                 }
                 AppButton {
                     text: "Disconnect"
                     onClicked: root.controller.disconnect()
+                }
+            }
+            Row {
+                width: parent.width
+                spacing: 10
+                Repeater {
+                    model: [
+                        { game: false, title: "Desktop", detail: "Point, select & drag\nCursor follows your screen position" },
+                        { game: true, title: "Game", detail: "Unlimited mouse look\nPhysical keys, sensitivity & gamepad" }
+                    ]
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: (toolbarContent.width - 10) / 2
+                        height: 92
+                        radius: 10
+                        color: root.gameMouse === modelData.game ? "#253b54" : Tokens.surface
+                        border.color: root.gameMouse === modelData.game ? Tokens.accent : Tokens.border
+                        Column {
+                            anchors.fill: parent
+                            anchors.margins: 12
+                            spacing: 6
+                            Text { text: modelData.title; color: Tokens.text; font.pixelSize: 15; font.bold: true }
+                            Text { text: modelData.detail; color: Tokens.textMuted; font.pixelSize: 11; width: parent.width; wrapMode: Text.WordWrap }
+                        }
+                        MouseArea { anchors.fill: parent; onClicked: root.controller.gameMode = modelData.game }
+                    }
                 }
             }
             Text {
@@ -185,9 +208,25 @@ Item {
                 checked: root.controller.sharedClipboard
                 onToggled: root.controller.sharedClipboard = checked
             }
+            CheckBox {
+                visible: root.gameMouse
+                text: "Use English keyboard while gaming"
+                checked: root.controller.englishKeyboard
+                onToggled: root.controller.englishKeyboard = checked
+            }
+            Text {
+                visible: root.gameMouse
+                width: parent.width
+                text: root.controller.gamepadAvailable ? "Gamepad forwards to the Windows host, including rumble."
+                    : "Gamepad input is unavailable on this host."
+                color: Tokens.textMuted
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+            }
             Text {
                 width: parent.width
-                text: (root.gameMouse ? "Game mouse locks the cursor. " : "Use this device opens controls. ")
+                text: (root.gameMouse ? "Game uses raw mouse movement; 1.00× keeps the original counts. "
+                      : "Desktop maps the pointer to the streamed display. ")
                       + root.releaseShortcut + " releases all input."
                 color: Tokens.textMuted
                 font.pixelSize: 12

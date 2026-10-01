@@ -235,6 +235,7 @@ void AccessibilityInput::clear() noexcept {
     CGWarpMouseCursorPosition(CGPointMake(restore_x_, restore_y_));
     game_mouse_ = false;
   }
+  language_.setEnglish(false);
 }
 
 }  // namespace ministream

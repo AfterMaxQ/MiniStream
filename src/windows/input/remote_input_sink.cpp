@@ -20,6 +20,7 @@ Result<void, RemoteInputError> RemoteInputSink::inject(const DesktopInput& input
 
   switch (input.kind) {
     case DesktopInputKind::Key: {
+      language_.refresh();
       key = desktop_key_from_wire(input.data);
       const auto translation = key ? windows_key_translation(*key) : std::nullopt;
       if (!translation || (input.flags & ~kDesktopKeyRelease) != 0U) {
@@ -126,6 +127,7 @@ void RemoteInputSink::clear() noexcept {
       pressed_buttons_.erase(button);
     }
   }
+  language_.setEnglish(false);
 }
 
 }  // namespace ministream

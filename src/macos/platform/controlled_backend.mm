@@ -263,6 +263,10 @@ bool MacControlledBackend::inject_input(const DesktopInput& input) {
   return impl_->started && impl_->input.inject(input);
 }
 
+void MacControlledBackend::configure_input(bool game, bool english) {
+  impl_->input.configure(game, english);
+}
+
 void MacControlledBackend::clear_input() noexcept {
   if (impl_) {
     impl_->input.clear();

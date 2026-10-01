@@ -294,6 +294,11 @@ bool WindowsControlledBackend::inject_input(const DesktopInput& input) {
   return impl_->started && impl_->input && impl_->input->inject(input);
 }
 
+void WindowsControlledBackend::configure_input(bool game, bool english) {
+  if (impl_->input) impl_->input->configure(game, english);
+  clear_gamepad();
+}
+
 void WindowsControlledBackend::clear_input() noexcept {
   if (impl_->input) {
     impl_->input->clear();

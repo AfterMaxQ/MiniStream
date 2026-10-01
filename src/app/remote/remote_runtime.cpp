@@ -278,10 +278,14 @@ void RemoteRuntime::toggle_input() {
   if (!streaming() || !input_router_) {
     return;
   }
-  if (!input_router_->begin()) {
+  const bool gamepad = game_mode_ && selected_host_ && selected_host_->capabilities.gamepad;
+  if (!input_router_->begin(gamepad)) {
     input_capture_.leave_remote();
     return;
   }
+  (void)send_input({DesktopInputKind::InputMode,
+      static_cast<std::uint16_t>((game_mode_ ? kInputModeGame : 0) |
+          (game_mode_ && english_keyboard_ ? kInputModeEnglish : 0)), 0, 0, 0});
 }
 
 void RemoteRuntime::release_input() {
@@ -295,6 +299,7 @@ void RemoteRuntime::release_input() {
     (void)send_input({DesktopInputKind::ReleaseAll, 0, 0, 0, 0});
   }
   if (backend_) backend_->clear_rumble();
+  pending_input_mode_.reset();
   if (input_router_) {
     input_router_->end();
   } else {
@@ -303,6 +308,8 @@ void RemoteRuntime::release_input() {
 }
 
 bool RemoteRuntime::route_input(const DesktopInput& input) {
+  if (pending_input_mode_ && (input.kind == DesktopInputKind::MouseMove ||
+                             input.kind == DesktopInputKind::MouseWheel)) return false;
   return input_router_ && input_router_->route(input);
 }
 
@@ -321,6 +328,7 @@ bool RemoteRuntime::send_input(const DesktopInput& input) {
       disconnect_session();
       return false;
     }
+    if (input.kind == DesktopInputKind::InputMode) pending_input_mode_ = *sequence;
     return send_reliable_input({*sequence, ControlKind::Input, payload});
   }
   if (const auto packet = crypto_->seal(PacketType::Input, payload); packet) {
@@ -383,6 +391,7 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
         disconnect_session();
       } else if (const auto sequence = decode_input_ack_control(*payload); sequence) {
         reliable_input_.acknowledge(*sequence);
+        if (pending_input_mode_ == sequence) pending_input_mode_.reset();
       } else if (const auto config = decode_codec_config(*payload); config) {
         // A retry of the same configuration must not destroy reference frames.
         if (!hello_ || config->codec != hello_->codec || config->width != hello_->width ||
@@ -442,7 +451,8 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
   if (common->type == PacketType::Feedback) {
     if (const auto payload = crypto_->open(incoming.datagram); payload) {
       last_authenticated_receive_ = SteadyClock::now();
-      if (const auto rumble = decode_rumble_packet(*payload); rumble && remote_input_active()) {
+      if (const auto rumble = decode_rumble_packet(*payload);
+          rumble && input_capture_.routes_to_remote(InputDevice::Gamepad)) {
         backend_->play_rumble(rumble->low, rumble->high, rumble->duration_ms);
       }
     }
@@ -644,7 +654,8 @@ void RemoteRuntime::tick() {
     if (clipboard_enabled_) clipboard_.tick(now,
         [this](auto bytes) { return send_clipboard_packet(bytes); });
   }
-  if (streaming() && input_capture_.routes_to_remote(InputDevice::Gamepad) && backend_) {
+  if (streaming() && !pending_input_mode_ &&
+      input_capture_.routes_to_remote(InputDevice::Gamepad) && backend_) {
     // Repeated neutral state also recovers a lost unplug/release datagram.
     gamepad_coalescer_.update(backend_->poll_gamepad().value_or(GamepadState{}), now);
     if (const auto packet = gamepad_coalescer_.flush_if_due(now); packet) {
@@ -830,6 +841,7 @@ void RemoteRuntime::disconnect_session() noexcept {
   }
   media_receiver_.reset();
   clipboard_.reset();
+  pending_input_mode_.reset();
   crypto_.reset();
   audio_decoder_.reset();
   codec_configured_ = false;

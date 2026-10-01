@@ -23,7 +23,13 @@ class ControlEscapeFilter final : public QObject {
     if (event->type() != QEvent::ShortcutOverride && event->type() != QEvent::KeyPress &&
         event->type() != QEvent::KeyRelease) return false;
     auto* key = static_cast<QKeyEvent*>(event);
-    if (key->key() != Qt::Key_R) return false;
+    bool release_key = key->key() == Qt::Key_R;
+#ifdef _WIN32
+    release_key = release_key || (key->nativeScanCode() & 0xFF) == 0x13;
+#elif defined(__APPLE__)
+    release_key = release_key || key->nativeVirtualKey() == 15;
+#endif
+    if (!release_key) return false;
     if (swallow_r_) {
       if (event->type() == QEvent::KeyRelease && !key->isAutoRepeat()) swallow_r_ = false;
       key->accept();

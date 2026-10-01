@@ -1,6 +1,7 @@
 #include "app/ui/role_controller.hpp"
 #include "app/ui/control_escape_filter.hpp"
 #include "app/ui/clipboard_bridge.hpp"
+#include "app/ui/game_keyboard_filter.hpp"
 
 #include "app/controlled/controlled_runtime.hpp"
 #include "app/remote/remote_runtime.hpp"
@@ -9,6 +10,7 @@
 #include "windows/platform/controlled_backend.hpp"
 #include "windows/platform/remote_backend.hpp"
 #include "windows/input/window_input_source.hpp"
+#include "windows/input/desktop_key_windows.hpp"
 #include "app/ui/windows_video_surface_bridge.hpp"
 #endif
 #ifdef __APPLE__
@@ -145,8 +147,32 @@ RoleController::RoleController(QObject* parent) : QObject(parent) {
   QSettings settings(QSettings::NativeFormat, QSettings::UserScope, "AfterMaxQ", "MiniStream");
   game_mode_ = settings.value("input/gameMode", true).toBool();
   shared_clipboard_ = settings.value("session/sharedClipboard", true).toBool();
+  english_keyboard_ = settings.value("input/englishKeyboard", true).toBool();
   const double sensitivity = settings.value("input/mouseSensitivity", 1.0).toDouble();
   mouse_sensitivity_ = std::isfinite(sensitivity) ? std::clamp(sensitivity, 0.1, 4.0) : 1.0;
+  new GameKeyboardFilter([this] { return game_mode_ && remoteInputActive(); },
+      [this](const QKeyEvent& event, bool pressed) {
+        std::optional<DesktopKey> physical;
+        for (std::uint16_t usage = 4; usage <= 0xE3; ++usage) {
+          const auto key = desktop_key_from_wire(usage);
+          if (!key) continue;
+#ifdef _WIN32
+          const auto native = windows_key_translation(*key);
+          if (native && event.nativeScanCode() &&
+              native->scan_code == (event.nativeScanCode() & 0xFF) &&
+              native->extended == ((event.nativeScanCode() & 0xFF00) != 0)) physical = key;
+#elif defined(__APPLE__)
+          if (AccessibilityInput::native_key_code(*key) == event.nativeVirtualKey()) physical = key;
+#endif
+          if (physical) break;
+        }
+#if defined(_WIN32) || defined(__APPLE__)
+        if (physical && remote_) remote_->route_input({DesktopInputKind::Key,
+            static_cast<std::uint16_t>(pressed ? 0 : kDesktopKeyRelease), 0, 0,
+            static_cast<std::uint16_t>(*physical)});
+        else routeKey(event.key(), pressed);
+#endif
+      }, this);
   new ControlEscapeFilter([this] { return remoteInputActive(); },
                           [this] { releaseRemoteInput(); }, this);
   pairing_trust_ = load_pairing_trust();
@@ -706,6 +732,12 @@ void RoleController::cancelPairing() {
 }
 
 void RoleController::toggleRemoteInput() {
+  if (!remoteInputActive()) {
+#if defined(_WIN32) || defined(__APPLE__)
+    if (remote_) remote_->set_input_mode(game_mode_, english_keyboard_);
+#endif
+    game_language_.setEnglish(game_mode_ && english_keyboard_);
+  }
 #ifdef _WIN32
   if (mode_ == RoleMode::Remote && remote_) {
     remote_->toggle_input();
@@ -715,10 +747,12 @@ void RoleController::toggleRemoteInput() {
     remote_->toggle_input();
   }
 #endif
+  if (!remoteInputActive()) game_language_.setEnglish(false);
   emit stateChanged();
 }
 
 void RoleController::releaseRemoteInput() {
+  game_language_.setEnglish(false);
   mouse_remainder_x_ = mouse_remainder_y_ = 0;
 #ifdef _WIN32
   if (remote_) {
@@ -750,6 +784,22 @@ void RoleController::routeKey(int key, bool pressed) {
   Q_UNUSED(key);
   Q_UNUSED(pressed);
 #endif
+}
+
+bool RoleController::gamepadAvailable() const noexcept {
+#if defined(_WIN32) || defined(__APPLE__)
+  return remote_ && remote_->selected_host() && remote_->selected_host()->capabilities.gamepad;
+#else
+  return false;
+#endif
+}
+
+void RoleController::setEnglishKeyboard(bool enabled) {
+  releaseRemoteInput();
+  english_keyboard_ = enabled;
+  QSettings(QSettings::NativeFormat, QSettings::UserScope, "AfterMaxQ", "MiniStream")
+      .setValue("input/englishKeyboard", enabled);
+  emit stateChanged();
 }
 
 void RoleController::setSharedClipboard(bool enabled) {
@@ -887,6 +937,7 @@ void RoleController::openPermissionSettings() {
 }
 
 void RoleController::tick() {
+  if (!remoteInputActive()) game_language_.setEnglish(false);
   clipboard_bridge_->setActive(shared_clipboard_ && connected(), mode_ == RoleMode::Remote);
   const int interval = connected() ? 2 : 10;
   if (tick_timer_.interval() != interval) tick_timer_.setInterval(interval);

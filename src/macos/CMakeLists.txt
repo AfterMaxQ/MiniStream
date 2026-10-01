@@ -13,6 +13,7 @@ add_library(
   video/video_surface_bridge.mm
   audio/coreaudio_output.mm
   audio/system_audio_capture.mm
+  "${PROJECT_SOURCE_DIR}/src/platform/input_language.cpp"
 )
 if(NOT MINISTREAM_BUILD_UI)
   find_package(Qt6 ${MINISTREAM_QT_VERSION} REQUIRED COMPONENTS Core)
@@ -24,7 +25,7 @@ target_link_libraries(
   PRIVATE "-framework Foundation" "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo"
           "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation"
           "-framework CoreGraphics" "-framework ApplicationServices" "-framework IOSurface"
-          "-framework ScreenCaptureKit" "-framework AppKit" "-framework IOKit"
+          "-framework ScreenCaptureKit" "-framework AppKit" "-framework IOKit" "-framework Carbon"
 )
 set_target_properties(ministream_macos_platform PROPERTIES AUTOMOC ON)
 ministream_set_warnings(ministream_macos_platform)

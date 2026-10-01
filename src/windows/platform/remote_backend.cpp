@@ -21,6 +21,7 @@ struct WindowsRemoteBackend::Impl {
   std::unique_ptr<WasapiOutput> audio;
   std::function<void()> surface_notifier;
   std::optional<SteadyClock::time_point> rumble_deadline;
+  std::optional<DWORD> gamepad_index;
   bool started{};
 };
 
@@ -122,13 +123,14 @@ void WindowsRemoteBackend::play_rumble(std::uint16_t low, std::uint16_t high,
   XINPUT_VIBRATION vibration{};
   vibration.wLeftMotorSpeed = static_cast<WORD>(low);
   vibration.wRightMotorSpeed = static_cast<WORD>(high);
-  XInputSetState(0, &vibration);
+  if (!impl_->gamepad_index) return;
+  XInputSetState(*impl_->gamepad_index, &vibration);
   impl_->rumble_deadline = SteadyClock::now() + std::chrono::milliseconds{duration_ms};
 }
 
 void WindowsRemoteBackend::clear_rumble() noexcept {
   XINPUT_VIBRATION vibration{};
-  XInputSetState(0, &vibration);
+  if (impl_ && impl_->gamepad_index) XInputSetState(*impl_->gamepad_index, &vibration);
   if (impl_) {
     impl_->rumble_deadline.reset();
   }
@@ -143,8 +145,13 @@ void WindowsRemoteBackend::tick(SteadyClock::time_point now) noexcept {
 
 std::optional<GamepadState> WindowsRemoteBackend::poll_gamepad() {
   XINPUT_STATE state{};
-  if (XInputGetState(0, &state) != ERROR_SUCCESS) {
-    return std::nullopt;
+  if (!impl_->gamepad_index || XInputGetState(*impl_->gamepad_index, &state) != ERROR_SUCCESS) {
+    clear_rumble();
+    impl_->gamepad_index.reset();
+    for (DWORD index = 0; index < XUSER_MAX_COUNT; ++index) {
+      if (XInputGetState(index, &state) == ERROR_SUCCESS) { impl_->gamepad_index = index; break; }
+    }
+    if (!impl_->gamepad_index) return std::nullopt;
   }
   const auto buttons = state.Gamepad.wButtons;
   std::uint32_t mapped = 0;

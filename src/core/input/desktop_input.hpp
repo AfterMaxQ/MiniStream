@@ -16,6 +16,7 @@ enum class DesktopInputKind : std::uint8_t {
   MouseButton = 3,
   MouseWheel = 4,
   ReleaseAll = 5,
+  InputMode = 6,
 };
 
 // Mouse buttons use the same small wire representation on every platform.
@@ -31,6 +32,8 @@ inline constexpr std::uint16_t kDesktopKeyRelease = 0x0001U;
 // Absolute mouse coordinates are normalized to 0..65535 within the captured display.
 inline constexpr std::uint16_t kDesktopMouseAbsolute = 0x0001U;
 inline constexpr std::uint16_t kDesktopMouseGame = 0x0002U;
+inline constexpr std::uint16_t kInputModeGame = 0x0001U;
+inline constexpr std::uint16_t kInputModeEnglish = 0x0002U;
 
 struct DesktopInput {
   DesktopInputKind kind{DesktopInputKind::Key};

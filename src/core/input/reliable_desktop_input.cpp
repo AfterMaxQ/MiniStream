@@ -26,7 +26,7 @@ std::uint32_t get_u32(std::span<const std::byte, 4> input) {
 bool is_reliable_desktop_input(const DesktopInput& input) noexcept {
   return input.kind == DesktopInputKind::Key ||
          input.kind == DesktopInputKind::MouseButton ||
-         input.kind == DesktopInputKind::ReleaseAll;
+         input.kind == DesktopInputKind::ReleaseAll || input.kind == DesktopInputKind::InputMode;
 }
 
 std::vector<std::byte> encode_reliable_desktop_input(const ReliableDesktopInput& input) {

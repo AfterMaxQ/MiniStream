@@ -103,6 +103,8 @@ class ControlledRuntime {
   std::uint32_t audio_sequence_{};
   GamepadSequenceFilter gamepad_sequence_filter_;
   ReliableDesktopInputReceiver reliable_input_receiver_;
+  bool input_enabled_{};
+  bool game_input_{};
   std::optional<DeviceIdentity> identity_;
   std::shared_ptr<PairingTrust> pairing_trust_;
   std::optional<PairingTranscript> authorization_transcript_;

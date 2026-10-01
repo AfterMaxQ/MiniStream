@@ -16,7 +16,7 @@ class RemoteInputRouter {
   using Sender = std::function<bool(const DesktopInput&)>;
 
   explicit RemoteInputRouter(InputCapture& capture, Sender sender);
-  bool begin();
+  bool begin(bool gamepad_enabled = true);
   void end() noexcept;
   [[nodiscard]] bool active() const noexcept;
   bool route(const DesktopInput& input);

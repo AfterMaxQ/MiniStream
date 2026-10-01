@@ -16,6 +16,7 @@ add_library(
   input/desktop_key_windows.cpp
   input/remote_input_sink.cpp
   input/window_input_source.cpp
+  "${PROJECT_SOURCE_DIR}/src/platform/input_language.cpp"
 )
 target_include_directories(ministream_windows_platform PUBLIC "${PROJECT_SOURCE_DIR}/src")
 if(MINISTREAM_HAVE_NVENC_SDK)

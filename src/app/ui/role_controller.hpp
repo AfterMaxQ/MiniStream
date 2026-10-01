@@ -2,6 +2,7 @@
 
 #include "core/session/role.hpp"
 #include "platform/capabilities.hpp"
+#include "platform/input_language.hpp"
 
 #include <QObject>
 #include <QString>
@@ -31,6 +32,8 @@ class RoleController final : public QObject {
   Q_PROPERTY(bool remoteInputActive READ remoteInputActive NOTIFY stateChanged)
   Q_PROPERTY(bool gameMode READ gameMode WRITE setGameMode NOTIFY stateChanged)
   Q_PROPERTY(bool sharedClipboard READ sharedClipboard WRITE setSharedClipboard NOTIFY stateChanged)
+  Q_PROPERTY(bool englishKeyboard READ englishKeyboard WRITE setEnglishKeyboard NOTIFY stateChanged)
+  Q_PROPERTY(bool gamepadAvailable READ gamepadAvailable NOTIFY stateChanged)
   Q_PROPERTY(double mouseSensitivity READ mouseSensitivity WRITE setMouseSensitivity NOTIFY stateChanged)
   Q_PROPERTY(QStringList qualityOptions READ qualityOptions CONSTANT)
   Q_PROPERTY(int streamQuality READ streamQuality WRITE setStreamQuality NOTIFY stateChanged)
@@ -71,6 +74,9 @@ class RoleController final : public QObject {
   bool gameMode() const noexcept { return game_mode_; }
   bool sharedClipboard() const noexcept { return shared_clipboard_; }
   void setSharedClipboard(bool enabled);
+  bool englishKeyboard() const noexcept { return english_keyboard_; }
+  void setEnglishKeyboard(bool enabled);
+  bool gamepadAvailable() const noexcept;
   void setGameMode(bool game);
   double mouseSensitivity() const noexcept { return mouse_sensitivity_; }
   void setMouseSensitivity(double value);
@@ -128,6 +134,8 @@ class RoleController final : public QObject {
   int stream_quality_{};
   bool game_mode_{true};
   bool shared_clipboard_{true};
+  bool english_keyboard_{true};
+  InputLanguageGuard game_language_;
   ClipboardBridge* clipboard_bridge_{};
   double mouse_sensitivity_{1.0};
   double mouse_remainder_x_{};

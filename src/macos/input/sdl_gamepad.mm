@@ -10,23 +10,22 @@ namespace ministream {
 
 struct SdlGamepad::Impl {
   SDL_Gamepad* gamepad{};
+  bool initialized{SDL_InitSubSystem(SDL_INIT_GAMEPAD)};
+  ~Impl() {
+    if (gamepad) { SDL_RumbleGamepad(gamepad, 0, 0, 0); SDL_CloseGamepad(gamepad); }
+    if (initialized) SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+  }
 };
 
-SdlGamepad::SdlGamepad() : impl_(std::make_unique<Impl>()) {
-  SDL_InitSubSystem(SDL_INIT_GAMEPAD);
-}
+SdlGamepad::SdlGamepad() : impl_(std::make_unique<Impl>()) {}
 
-SdlGamepad::~SdlGamepad() {
-  if (impl_->gamepad != nullptr) {
-    SDL_CloseGamepad(impl_->gamepad);
-  }
-  SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-}
+SdlGamepad::~SdlGamepad() = default;
 
 SdlGamepad::SdlGamepad(SdlGamepad&&) noexcept = default;
 SdlGamepad& SdlGamepad::operator=(SdlGamepad&&) noexcept = default;
 
 std::optional<GamepadState> SdlGamepad::poll_latest() {
+  if (!impl_ || !impl_->initialized) return std::nullopt;
   SDL_PumpEvents();
   if (impl_->gamepad && !SDL_GamepadConnected(impl_->gamepad)) {
     SDL_CloseGamepad(impl_->gamepad);
@@ -39,10 +38,10 @@ std::optional<GamepadState> SdlGamepad::poll_latest() {
       SDL_free(ids);
       return std::nullopt;
     }
-    impl_->gamepad = SDL_OpenGamepad(ids[0]);
+    for (int i = 0; i < count && !impl_->gamepad; ++i) impl_->gamepad = SDL_OpenGamepad(ids[i]);
     SDL_free(ids);
   }
-  if (impl_->gamepad == nullptr) {
+  if (!impl_ || impl_->gamepad == nullptr) {
     return std::nullopt;
   }
 
@@ -84,7 +83,7 @@ std::optional<GamepadState> SdlGamepad::poll_latest() {
 }
 
 bool SdlGamepad::rumble(std::uint16_t low, std::uint16_t high, Microseconds duration) {
-  if (impl_->gamepad == nullptr) {
+  if (!impl_ || impl_->gamepad == nullptr) {
     return false;
   }
   const auto milliseconds = std::clamp<std::int64_t>(duration.count() / 1000, 0, 60'000);
