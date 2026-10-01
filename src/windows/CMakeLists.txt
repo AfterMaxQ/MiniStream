@@ -41,6 +41,8 @@ if(MINISTREAM_BUILD_UI)
     "${PROJECT_SOURCE_DIR}/src/app/qt_main.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.hpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/clipboard_bridge.cpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/clipboard_bridge.hpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.hpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/relative_mouse_capture.cpp"

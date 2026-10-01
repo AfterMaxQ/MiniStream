@@ -32,6 +32,7 @@ ministream_set_warnings(ministream_macos_platform)
 if(MINISTREAM_BUILD_UI)
   find_package(Qt6 ${MINISTREAM_QT_VERSION} REQUIRED COMPONENTS GuiPrivate)
   set_source_files_properties("${PROJECT_SOURCE_DIR}/src/app/ui/relative_mouse_capture.cpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/clipboard_bridge.cpp"
     PROPERTIES LANGUAGE OBJCXX)
   set_source_files_properties(
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.mm"
@@ -43,6 +44,8 @@ if(MINISTREAM_BUILD_UI)
     "${PROJECT_SOURCE_DIR}/src/app/qt_main.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.cpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/role_controller.hpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/clipboard_bridge.cpp"
+    "${PROJECT_SOURCE_DIR}/src/app/ui/clipboard_bridge.hpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.mm"
     "${PROJECT_SOURCE_DIR}/src/app/ui/video_surface_item.hpp"
     "${PROJECT_SOURCE_DIR}/src/app/ui/relative_mouse_capture.cpp"

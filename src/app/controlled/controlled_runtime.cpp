@@ -133,6 +133,7 @@ void ControlledRuntime::stop() noexcept {
   }
   scheduler_.reset();
   media_sender_.reset();
+  clipboard_.reset();
   crypto_.reset();
   rate_controller_.reset();
   encoder_bitrate_bps_ = 0;
@@ -243,6 +244,7 @@ void ControlledRuntime::create_media_sender() {
   if (!audio_encoder_->ready()) {
     media_sender_.reset();
     scheduler_.reset();
+    clipboard_.reset();
     crypto_.reset();
   }
 }
@@ -367,7 +369,11 @@ void ControlledRuntime::process_datagram(const ReceivedDatagram& incoming) {
         common && common->type == PacketType::Control && crypto_ && streaming()) {
       if (const auto payload = crypto_->open(incoming.datagram); payload) {
         last_authenticated_receive_ = SteadyClock::now();
-        if (is_disconnect_control(*payload)) {
+        if (clipboard_.receive(*payload, SteadyClock::now(),
+              [this](auto bytes) { return send_clipboard_packet(bytes); },
+              [this](const auto& text) { if (clipboard_enabled_ && clipboard_receiver_) clipboard_receiver_(text); })) {
+          return;
+        } else if (is_disconnect_control(*payload)) {
           clear_peer_session();
         } else if (is_request_keyframe_control(*payload) && backend_) {
           if (video_producer_) video_producer_->request_keyframe();
@@ -521,6 +527,12 @@ void ControlledRuntime::apply_feedback(const FeedbackReport& report) {
   if (wire_rate != scheduler_->video_rate_bps()) {
     scheduler_->set_video_rate(wire_rate);
   }
+}
+
+bool ControlledRuntime::send_clipboard_packet(std::span<const std::byte> payload) {
+  if (!session_ || !crypto_) return false;
+  const auto sealed = crypto_->seal(PacketType::Control, payload);
+  return sealed && static_cast<bool>(session_->reply(sealed->bytes));
 }
 
 void ControlledRuntime::send_pending_video(SteadyClock::time_point now) {
@@ -677,6 +689,8 @@ void ControlledRuntime::tick() {
   send_heartbeat(now);
   send_pending_rumble();
   send_pending_audio(now);
+  if (clipboard_enabled_) clipboard_.tick(now,
+      [this](auto bytes) { return send_clipboard_packet(bytes); });
   send_pending_video(now);
   if (!scheduler_) {
     return;
@@ -765,6 +779,7 @@ void ControlledRuntime::clear_peer_session() noexcept {
   video_producer_.reset();
   scheduler_.reset();
   media_sender_.reset();
+  clipboard_.reset();
   crypto_.reset();
   rate_controller_.reset();
   encoder_bitrate_bps_ = 0;

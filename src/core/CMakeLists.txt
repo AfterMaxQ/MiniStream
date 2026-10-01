@@ -16,6 +16,7 @@ add_library(
   security/pairing.cpp
   security/session_crypto.cpp
   session/handshake.cpp
+  session/clipboard_channel.cpp
   net/udp_endpoint.cpp
   audio/audio_packet.cpp
   audio/opus_codec.cpp

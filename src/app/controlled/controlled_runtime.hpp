@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/audio/audio_packet.hpp"
+#include "core/session/clipboard_channel.hpp"
 #include "core/audio/opus_codec.hpp"
 #include "core/adaptation/rate_controller.hpp"
 #include "core/input/desktop_input.hpp"
@@ -56,6 +57,9 @@ class ControlledRuntime {
   [[nodiscard]] std::optional<DiscoveryError> last_discovery_error() const noexcept;
   bool set_advertisement(DiscoveryAdvertisement advertisement);
   void set_telemetry_callback(std::function<void(const StreamSnapshot&)> callback);
+  void set_clipboard_callback(ClipboardChannel::Receiver callback) { clipboard_receiver_ = std::move(callback); }
+  void set_clipboard_enabled(bool enabled) { clipboard_enabled_ = enabled; if (!enabled) clipboard_.cancelOutgoing(); }
+  bool send_clipboard(std::string text) { return streaming() && clipboard_enabled_ && clipboard_.queue(std::move(text)); }
 
   void confirm_pairing();
   bool pair_with_code(std::string_view code);
@@ -136,6 +140,10 @@ class ControlledRuntime {
   double video_stats_work_ms_{};
   std::function<void(const StreamSnapshot&)> telemetry_callback_;
   SessionId session_id_{1};
+  ClipboardChannel clipboard_;
+  ClipboardChannel::Receiver clipboard_receiver_;
+  bool clipboard_enabled_{true};
+  bool send_clipboard_packet(std::span<const std::byte> payload);
 };
 
 }  // namespace ministream

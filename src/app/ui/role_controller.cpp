@@ -1,5 +1,6 @@
 #include "app/ui/role_controller.hpp"
 #include "app/ui/control_escape_filter.hpp"
+#include "app/ui/clipboard_bridge.hpp"
 
 #include "app/controlled/controlled_runtime.hpp"
 #include "app/remote/remote_runtime.hpp"
@@ -143,6 +144,7 @@ std::shared_ptr<PairingTrust> load_pairing_trust() {
 RoleController::RoleController(QObject* parent) : QObject(parent) {
   QSettings settings(QSettings::NativeFormat, QSettings::UserScope, "AfterMaxQ", "MiniStream");
   game_mode_ = settings.value("input/gameMode", true).toBool();
+  shared_clipboard_ = settings.value("session/sharedClipboard", true).toBool();
   const double sensitivity = settings.value("input/mouseSensitivity", 1.0).toDouble();
   mouse_sensitivity_ = std::isfinite(sensitivity) ? std::clamp(sensitivity, 0.1, 4.0) : 1.0;
   new ControlEscapeFilter([this] { return remoteInputActive(); },
@@ -178,6 +180,22 @@ RoleController::RoleController(QObject* parent) : QObject(parent) {
   mode_ = RoleMode::Remote;
 #endif
 
+  clipboard_bridge_ = new ClipboardBridge([this](std::string text) {
+#if defined(_WIN32) || defined(__APPLE__)
+    if (mode_ == RoleMode::Controlled && controlled_) controlled_->send_clipboard(std::move(text));
+    else if (remote_) remote_->send_clipboard(std::move(text));
+#endif
+  }, this);
+#if defined(_WIN32) || defined(__APPLE__)
+  auto receive = [this](const std::string& text) {
+    clipboard_bridge_->setActive(shared_clipboard_ && connected(), false);
+    clipboard_bridge_->receive(text);
+  };
+  controlled_->set_clipboard_callback(receive);
+  remote_->set_clipboard_callback(receive);
+  controlled_->set_clipboard_enabled(shared_clipboard_);
+  remote_->set_clipboard_enabled(shared_clipboard_);
+#endif
   tick_timer_.setInterval(10);
   tick_timer_.setTimerType(Qt::PreciseTimer);
   connect(qGuiApp, &QGuiApplication::applicationStateChanged, this,
@@ -734,6 +752,18 @@ void RoleController::routeKey(int key, bool pressed) {
 #endif
 }
 
+void RoleController::setSharedClipboard(bool enabled) {
+  shared_clipboard_ = enabled;
+  QSettings(QSettings::NativeFormat, QSettings::UserScope, "AfterMaxQ", "MiniStream")
+      .setValue("session/sharedClipboard", enabled);
+#if defined(_WIN32) || defined(__APPLE__)
+  controlled_->set_clipboard_enabled(enabled);
+  remote_->set_clipboard_enabled(enabled);
+#endif
+  clipboard_bridge_->setActive(enabled && connected(), mode_ == RoleMode::Remote);
+  emit stateChanged();
+}
+
 void RoleController::setGameMode(bool game) {
   if (game_mode_ == game) return;
   releaseRemoteInput();
@@ -857,6 +887,7 @@ void RoleController::openPermissionSettings() {
 }
 
 void RoleController::tick() {
+  clipboard_bridge_->setActive(shared_clipboard_ && connected(), mode_ == RoleMode::Remote);
   const int interval = connected() ? 2 : 10;
   if (tick_timer_.interval() != interval) tick_timer_.setInterval(interval);
 #if defined(_WIN32) || defined(__APPLE__)
@@ -897,6 +928,7 @@ QString RoleController::videoStatus() const {
 }
 
 void RoleController::cleanupCurrentMode() {
+  clipboard_bridge_->setActive(false, false);
   releaseRemoteInput();
 #ifdef _WIN32
   if (mode_ == RoleMode::Controlled) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/audio/audio_packet.hpp"
+#include "core/session/clipboard_channel.hpp"
 #include "core/audio/drift_controller.hpp"
 #include "core/audio/jitter_buffer.hpp"
 #include "core/audio/opus_codec.hpp"
@@ -62,6 +63,9 @@ class RemoteRuntime {
   [[nodiscard]] DiscoveryState discovery_state() const noexcept;
   [[nodiscard]] std::optional<DiscoveryError> last_discovery_error() const noexcept;
   void set_telemetry_callback(std::function<void(const StreamSnapshot&)> callback);
+  void set_clipboard_callback(ClipboardChannel::Receiver callback) { clipboard_receiver_ = std::move(callback); }
+  void set_clipboard_enabled(bool enabled) { clipboard_enabled_ = enabled; if (!enabled) clipboard_.cancelOutgoing(); }
+  bool send_clipboard(std::string text) { return streaming() && clipboard_enabled_ && clipboard_.queue(std::move(text)); }
 
   bool refresh(Microseconds timeout = std::chrono::milliseconds{750});
   bool begin_discovery(Microseconds timeout = std::chrono::milliseconds{750});
@@ -137,6 +141,10 @@ class RemoteRuntime {
   std::unique_ptr<RemoteInputRouter> input_router_;
   InputCoalescer gamepad_coalescer_;
   ReliableControl reliable_input_;
+  ClipboardChannel clipboard_;
+  ClipboardChannel::Receiver clipboard_receiver_;
+  bool clipboard_enabled_{true};
+  bool send_clipboard_packet(std::span<const std::byte> payload);
   SessionId session_id_{1};
   bool codec_configured_{};
   std::optional<CodecConfig> active_codec_config_;

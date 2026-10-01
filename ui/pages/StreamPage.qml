@@ -180,6 +180,11 @@ Item {
                     onMoved: root.controller.mouseSensitivity = value
                 }
             }
+            CheckBox {
+                text: "Share text clipboard"
+                checked: root.controller.sharedClipboard
+                onToggled: root.controller.sharedClipboard = checked
+            }
             Text {
                 width: parent.width
                 text: (root.gameMouse ? "Game mouse locks the cursor. " : "Use this device opens controls. ")

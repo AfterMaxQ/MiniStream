@@ -15,6 +15,7 @@ namespace ministream {
 class ControlledRuntime;
 class RemoteRuntime;
 class PairingTrust;
+class ClipboardBridge;
 
 class RoleController final : public QObject {
   Q_OBJECT
@@ -29,6 +30,7 @@ class RoleController final : public QObject {
   Q_PROPERTY(bool pairing READ pairing NOTIFY stateChanged)
   Q_PROPERTY(bool remoteInputActive READ remoteInputActive NOTIFY stateChanged)
   Q_PROPERTY(bool gameMode READ gameMode WRITE setGameMode NOTIFY stateChanged)
+  Q_PROPERTY(bool sharedClipboard READ sharedClipboard WRITE setSharedClipboard NOTIFY stateChanged)
   Q_PROPERTY(double mouseSensitivity READ mouseSensitivity WRITE setMouseSensitivity NOTIFY stateChanged)
   Q_PROPERTY(QStringList qualityOptions READ qualityOptions CONSTANT)
   Q_PROPERTY(int streamQuality READ streamQuality WRITE setStreamQuality NOTIFY stateChanged)
@@ -67,6 +69,8 @@ class RoleController final : public QObject {
   [[nodiscard]] bool pairing() const noexcept;
   [[nodiscard]] bool remoteInputActive() const noexcept;
   bool gameMode() const noexcept { return game_mode_; }
+  bool sharedClipboard() const noexcept { return shared_clipboard_; }
+  void setSharedClipboard(bool enabled);
   void setGameMode(bool game);
   double mouseSensitivity() const noexcept { return mouse_sensitivity_; }
   void setMouseSensitivity(double value);
@@ -123,6 +127,8 @@ class RoleController final : public QObject {
   RoleMode mode_{RoleMode::Remote};
   int stream_quality_{};
   bool game_mode_{true};
+  bool shared_clipboard_{true};
+  ClipboardBridge* clipboard_bridge_{};
   double mouse_sensitivity_{1.0};
   double mouse_remainder_x_{};
   double mouse_remainder_y_{};

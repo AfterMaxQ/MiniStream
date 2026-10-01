@@ -345,6 +345,12 @@ bool RemoteRuntime::send_reliable_input(const ControlMessage& message) {
   return sealed && static_cast<bool>(session_->send(sealed->bytes));
 }
 
+bool RemoteRuntime::send_clipboard_packet(std::span<const std::byte> payload) {
+  if (!session_ || !crypto_) return false;
+  const auto sealed = crypto_->seal(PacketType::Control, payload);
+  return sealed && static_cast<bool>(session_->send(sealed->bytes));
+}
+
 void RemoteRuntime::send_gamepad(const GamepadPacket& packet) {
   if (!session_ || !crypto_) {
     return;
@@ -369,7 +375,11 @@ void RemoteRuntime::poll_media(const ReceivedDatagram& incoming) {
   if (common->type == PacketType::Control) {
     if (const auto payload = crypto_->open(incoming.datagram); payload) {
       last_authenticated_receive_ = SteadyClock::now();
-      if (is_disconnect_control(*payload)) {
+      if (clipboard_.receive(*payload, SteadyClock::now(),
+            [this](auto bytes) { return send_clipboard_packet(bytes); },
+            [this](const auto& text) { if (clipboard_enabled_ && clipboard_receiver_) clipboard_receiver_(text); })) {
+        return;
+      } else if (is_disconnect_control(*payload)) {
         disconnect_session();
       } else if (const auto sequence = decode_input_ack_control(*payload); sequence) {
         reliable_input_.acknowledge(*sequence);
@@ -631,6 +641,8 @@ void RemoteRuntime::tick() {
     if (!codec_configured_ || awaiting_keyframe_) request_keyframe(now);
     tick_confirmation_grace(now);
     play_audio(SteadyClock::now());
+    if (clipboard_enabled_) clipboard_.tick(now,
+        [this](auto bytes) { return send_clipboard_packet(bytes); });
   }
   if (streaming() && input_capture_.routes_to_remote(InputDevice::Gamepad) && backend_) {
     // Repeated neutral state also recovers a lost unplug/release datagram.
@@ -817,6 +829,7 @@ void RemoteRuntime::disconnect_session() noexcept {
     input_capture_.leave_remote();
   }
   media_receiver_.reset();
+  clipboard_.reset();
   crypto_.reset();
   audio_decoder_.reset();
   codec_configured_ = false;
