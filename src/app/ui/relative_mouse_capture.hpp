@@ -4,6 +4,8 @@
 #include <QPointF>
 #include <QPointer>
 #include <QWindow>
+#include <QTimer>
+#include <QString>
 
 namespace ministream {
 
@@ -23,14 +25,19 @@ class RelativeMouseCapture : public QObject, public QAbstractNativeEventFilter {
   void windowChanged();
   void activeChanged();
   void moved(int dx, int dy);
-  void captureFailed();
+  void captureFailed(const QString& reason);
  private:
   QPointer<QWindow> window_;
   QPoint restore_position_;
   QPointF remainder_;
   bool active_{};
+  QTimer flush_timer_;
+  QPoint pending_;
 #ifdef __APPLE__
   bool mouse_coalescing_was_enabled_{true};
+  void* hid_manager_{};
+  bool raw_mouse_{};
+  static void hidValue(void* context, int result, void* sender, void* value);
 #endif
 };
 

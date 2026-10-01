@@ -12,7 +12,7 @@
 namespace ministream {
 
 inline constexpr std::uint32_t kProtocolMagic = 0x4D535452U;
-inline constexpr std::uint8_t kProtocolVersion = 3;
+inline constexpr std::uint8_t kProtocolVersion = 4;
 inline constexpr std::size_t kCommonHeaderBytes = 12;
 
 struct CommonHeader {

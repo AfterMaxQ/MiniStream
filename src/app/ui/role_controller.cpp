@@ -24,6 +24,7 @@
 #include <QSettings>
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 
 namespace ministream {
@@ -140,6 +141,10 @@ std::shared_ptr<PairingTrust> load_pairing_trust() {
 }  // namespace
 
 RoleController::RoleController(QObject* parent) : QObject(parent) {
+  QSettings settings(QSettings::NativeFormat, QSettings::UserScope, "AfterMaxQ", "MiniStream");
+  game_mode_ = settings.value("input/gameMode", true).toBool();
+  const double sensitivity = settings.value("input/mouseSensitivity", 1.0).toDouble();
+  mouse_sensitivity_ = std::isfinite(sensitivity) ? std::clamp(sensitivity, 0.1, 4.0) : 1.0;
   new ControlEscapeFilter([this] { return remoteInputActive(); },
                           [this] { releaseRemoteInput(); }, this);
   pairing_trust_ = load_pairing_trust();
@@ -696,6 +701,7 @@ void RoleController::toggleRemoteInput() {
 }
 
 void RoleController::releaseRemoteInput() {
+  mouse_remainder_x_ = mouse_remainder_y_ = 0;
 #ifdef _WIN32
   if (remote_) {
     remote_->release_input();
@@ -728,16 +734,44 @@ void RoleController::routeKey(int key, bool pressed) {
 #endif
 }
 
+void RoleController::setGameMode(bool game) {
+  if (game_mode_ == game) return;
+  releaseRemoteInput();
+  game_mode_ = game;
+  QSettings(QSettings::NativeFormat, QSettings::UserScope, "AfterMaxQ", "MiniStream")
+      .setValue("input/gameMode", game);
+  emit stateChanged();
+}
+
+void RoleController::setMouseSensitivity(double value) {
+  if (!std::isfinite(value)) return;
+  mouse_sensitivity_ = std::clamp(value, 0.1, 4.0);
+  mouse_remainder_x_ = mouse_remainder_y_ = 0;
+  QSettings(QSettings::NativeFormat, QSettings::UserScope, "AfterMaxQ", "MiniStream")
+      .setValue("input/mouseSensitivity", mouse_sensitivity_);
+  emit stateChanged();
+}
+
 void RoleController::routeMouseMove(int dx, int dy) {
+  if (!game_mode_) return;
+  mouse_remainder_x_ += dx * mouse_sensitivity_;
+  mouse_remainder_y_ += dy * mouse_sensitivity_;
+  dx = static_cast<int>(mouse_remainder_x_);
+  dy = static_cast<int>(mouse_remainder_y_);
+  mouse_remainder_x_ -= dx;
+  mouse_remainder_y_ -= dy;
+  if (!dx && !dy) return;
 #ifdef _WIN32
   if (remote_ && remoteInputActive()) {
     if (const auto input = WindowInputSource::mouse_move(dx, dy)) {
-      remote_->route_input(*input);
+      auto game_input = *input;
+      game_input.flags = kDesktopMouseGame;
+      remote_->route_input(game_input);
     }
   }
 #elif defined(__APPLE__)
   if (remote_ && remoteInputActive()) {
-    remote_->route_input({DesktopInputKind::MouseMove, 0, dx, dy, 0});
+    remote_->route_input({DesktopInputKind::MouseMove, kDesktopMouseGame, dx, dy, 0});
   }
 #else
   Q_UNUSED(dx);

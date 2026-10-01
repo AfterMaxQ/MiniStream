@@ -24,7 +24,7 @@ target_link_libraries(
   PRIVATE "-framework Foundation" "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo"
           "-framework AudioToolbox" "-framework CoreAudio" "-framework AVFoundation"
           "-framework CoreGraphics" "-framework ApplicationServices" "-framework IOSurface"
-          "-framework ScreenCaptureKit" "-framework AppKit"
+          "-framework ScreenCaptureKit" "-framework AppKit" "-framework IOKit"
 )
 set_target_properties(ministream_macos_platform PROPERTIES AUTOMOC ON)
 ministream_set_warnings(ministream_macos_platform)

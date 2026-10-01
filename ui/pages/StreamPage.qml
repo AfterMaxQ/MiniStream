@@ -7,7 +7,8 @@ Item {
     required property var controller
     required property var appWindow
     property bool toolbarOpen: true
-    property bool gameMouse: false
+    readonly property bool gameMouse: controller.gameMode
+    property string captureError: ""
     property bool wasRemote: false
     readonly property bool routing: visible && controller.remoteInputActive && !toolbarOpen
     readonly property string releaseShortcut: Qt.platform.os === "osx"
@@ -51,7 +52,7 @@ Item {
         window: root.appWindow
         active: root.routing && root.gameMouse && root.appWindow.active
         onMoved: function(dx, dy) { root.controller.routeMouseMove(dx, dy) }
-        onCaptureFailed: { root.gameMouse = false; root.showControls() }
+        onCaptureFailed: function(reason) { root.captureError = reason; root.showControls() }
     }
     Rectangle { anchors.fill: parent; color: "#050607" }
     VideoSurfaceItem {
@@ -145,7 +146,7 @@ Item {
                 }
                 AppButton {
                     text: root.gameMouse ? "Mouse: Game" : "Mouse: Desktop"
-                    onClicked: { root.controller.releaseRemoteInput(); root.gameMouse = !root.gameMouse }
+                    onClicked: root.controller.gameMode = !root.gameMouse
                 }
                 AppButton {
                     text: root.appWindow.visibility === Window.FullScreen ? "Exit fullscreen" : "Fullscreen"
@@ -154,6 +155,29 @@ Item {
                 AppButton {
                     text: "Disconnect"
                     onClicked: root.controller.disconnect()
+                }
+            }
+            Text {
+                width: parent.width
+                visible: root.captureError.length > 0
+                text: root.captureError
+                color: Tokens.text
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+            }
+            Row {
+                visible: root.gameMouse
+                spacing: 12
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "Sensitivity  " + root.controller.mouseSensitivity.toFixed(2) + "×"
+                    color: Tokens.text
+                }
+                Slider {
+                    width: 220
+                    from: 0.1; to: 4; stepSize: 0.05
+                    value: root.controller.mouseSensitivity
+                    onMoved: root.controller.mouseSensitivity = value
                 }
             }
             Text {

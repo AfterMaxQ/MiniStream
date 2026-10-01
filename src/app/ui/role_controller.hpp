@@ -28,6 +28,8 @@ class RoleController final : public QObject {
   Q_PROPERTY(bool connected READ connected NOTIFY stateChanged)
   Q_PROPERTY(bool pairing READ pairing NOTIFY stateChanged)
   Q_PROPERTY(bool remoteInputActive READ remoteInputActive NOTIFY stateChanged)
+  Q_PROPERTY(bool gameMode READ gameMode WRITE setGameMode NOTIFY stateChanged)
+  Q_PROPERTY(double mouseSensitivity READ mouseSensitivity WRITE setMouseSensitivity NOTIFY stateChanged)
   Q_PROPERTY(QStringList qualityOptions READ qualityOptions CONSTANT)
   Q_PROPERTY(int streamQuality READ streamQuality WRITE setStreamQuality NOTIFY stateChanged)
   Q_PROPERTY(QString deviceLabel READ deviceLabel CONSTANT)
@@ -64,6 +66,10 @@ class RoleController final : public QObject {
   [[nodiscard]] bool connected() const noexcept;
   [[nodiscard]] bool pairing() const noexcept;
   [[nodiscard]] bool remoteInputActive() const noexcept;
+  bool gameMode() const noexcept { return game_mode_; }
+  void setGameMode(bool game);
+  double mouseSensitivity() const noexcept { return mouse_sensitivity_; }
+  void setMouseSensitivity(double value);
   [[nodiscard]] QStringList qualityOptions() const;
   [[nodiscard]] int streamQuality() const noexcept;
   Q_INVOKABLE void setStreamQuality(int quality);
@@ -116,6 +122,10 @@ class RoleController final : public QObject {
 
   RoleMode mode_{RoleMode::Remote};
   int stream_quality_{};
+  bool game_mode_{true};
+  double mouse_sensitivity_{1.0};
+  double mouse_remainder_x_{};
+  double mouse_remainder_y_{};
   ControlledCapabilities controlled_capabilities_;
   RemoteCapabilities remote_capabilities_;
   QString failure_text_;

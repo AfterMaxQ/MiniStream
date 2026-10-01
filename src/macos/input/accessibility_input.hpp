@@ -13,6 +13,7 @@ enum class AccessibilityInputError { Permission, InvalidEvent, PostFailed };
 
 class AccessibilityInput {
  public:
+  ~AccessibilityInput() { clear(); }
   static bool trusted() noexcept;
   static std::optional<std::uint16_t> native_key_code(DesktopKey key) noexcept;
   static std::optional<DesktopInput> key_from_qt(std::uint32_t qt_key,
@@ -28,6 +29,9 @@ class AccessibilityInput {
   std::int64_t wheel_remainder_{};
   bool caps_lock_{};
   bool modifiers_initialized_{};
+  bool game_mouse_{};
+  double restore_x_{};
+  double restore_y_{};
 };
 
 }  // namespace ministream

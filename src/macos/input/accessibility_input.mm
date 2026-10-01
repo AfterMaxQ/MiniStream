@@ -114,6 +114,15 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
     auto current = CGEventCreate(nullptr);
     const auto location = current ? CGEventGetLocation(current) : CGPointZero;
     if (current) CFRelease(current);
+    const bool game = (input.flags & kDesktopMouseGame) != 0;
+    if (game != game_mouse_) {
+      if (game) {
+        restore_x_ = location.x;
+        restore_y_ = location.y;
+      }
+      CGAssociateMouseAndMouseCursorPosition(!game);
+      game_mouse_ = game;
+    }
     auto type = kCGEventMouseMoved;
     auto button = kCGMouseButtonLeft;
     if (pressed_buttons_.contains(DesktopMouseButton::Left)) type = kCGEventLeftMouseDragged;
@@ -125,6 +134,8 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
       button = kCGMouseButtonCenter;
     }
     auto destination = CGPointMake(location.x + input.x, location.y + input.y);
+    // The event position remains anchored; games consume the unbounded deltas.
+    if (game) destination = location;
     if (input.flags & kDesktopMouseAbsolute) {
       const auto bounds = CGDisplayBounds(CGMainDisplayID());
       destination = CGPointMake(bounds.origin.x + input.x * (bounds.size.width - 1) / 65535.0,
@@ -133,9 +144,9 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
     event = CGEventCreateMouseEvent(nullptr, type, destination, button);
     if (event) {
       CGEventSetIntegerValueField(event, kCGMouseEventDeltaX,
-                                 static_cast<int64_t>(destination.x - location.x));
+                                 game ? input.x : static_cast<int64_t>(destination.x - location.x));
       CGEventSetIntegerValueField(event, kCGMouseEventDeltaY,
-                                 static_cast<int64_t>(destination.y - location.y));
+                                 game ? input.y : static_cast<int64_t>(destination.y - location.y));
     }
   } else if (input.kind == DesktopInputKind::MouseButton) {
     auto current = CGEventCreate(nullptr);
@@ -219,6 +230,11 @@ void AccessibilityInput::clear() noexcept {
     }
   }
   modifiers_initialized_ = false;
+  if (game_mouse_) {
+    CGAssociateMouseAndMouseCursorPosition(true);
+    CGWarpMouseCursorPosition(CGPointMake(restore_x_, restore_y_));
+    game_mouse_ = false;
+  }
 }
 
 }  // namespace ministream

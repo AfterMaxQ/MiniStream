@@ -3,7 +3,8 @@
 namespace ministream {
 namespace {
 bool valid_mouse_move(const DesktopInput& input) {
-  return input.data == 0 && (input.flags & ~kDesktopMouseAbsolute) == 0 &&
+  return input.data == 0 && (input.flags & ~(kDesktopMouseAbsolute | kDesktopMouseGame)) == 0 &&
+         input.flags != (kDesktopMouseAbsolute | kDesktopMouseGame) &&
          (!(input.flags & kDesktopMouseAbsolute) ||
           (input.x >= 0 && input.x <= 65535 && input.y >= 0 && input.y <= 65535));
 }
