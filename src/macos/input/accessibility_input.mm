@@ -101,6 +101,7 @@ Result<void, AccessibilityInputError> AccessibilityInput::inject(
   std::optional<DesktopMouseButton> button_state;
   bool release{};
   if (input.kind == DesktopInputKind::Key) {
+    language_.refresh();
     const auto key = desktop_key_from_wire(input.data);
     const auto code = key ? native_key_code(*key) : std::nullopt;
     if (!code || (input.flags & ~kDesktopKeyRelease) != 0U) {

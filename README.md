@@ -23,7 +23,7 @@ ControlledRuntime                 RemoteRuntime
                     │
                     ▼
 MiniStream Core: versioned UDP, pairing, authenticated encryption,
-FEC, bounded packet scheduling, Opus audio, input and telemetry
+FEC, bounded packet scheduling, Opus audio, input, clipboard and telemetry
 ```
 
 视频、音频和输入都通过同一条加密 UDP 会话传输。控制端只接收主动广播的
@@ -52,23 +52,37 @@ HDR 使用 HEVC Main10，并要求两端及被共享显示器支持 HDR。
 
 1. 在准备共享画面的设备上打开 **Allow control**，确认 Video、Audio、Input
    和 Network 状态正常，然后点击 **Allow control**。
-2. 在另一台设备切换到 **Remote control**，设备列表每 3 秒自动刷新，也可点击 **Find devices** 立即查找，从列表中
+2. 在另一台设备切换到 **Remote control**，设备在后台自动发现，也可点击 **Find devices** 立即查找，从列表中
    选择设备。列表显示系统类型、设备名和视频/音频参数。
 3. 点击 **Connect**。首次连接时，控制端显示六位配对码，在被控制端输入
-   该码并点击 **Pair** 即可开始串流。配对关系保存在当前系统用户的设置中，
+   该码并点击 **Pair & connect** 即可开始串流。配对关系保存在当前系统用户的设置中，
    以后点击 **Connect** 直接连接。被控制端的 **Forget paired devices** 可
    清除已保存的配对关系。
-4. 串流页面点击 **Control remote** 将键盘、鼠标和可用手柄发送到远端；
+4. 串流页面选择 **Desktop** 或 **Game**，点击 **Control remote** 将输入发送到远端；
    Desktop 模式下点击右上角 **Use this device** 恢复本机输入并打开控制栏。
    移动鼠标或悬停顶部不会切换控制权。Game 模式锁定光标，使用下方提示的
    退出组合键恢复本机输入；控制栏不会自动隐藏。
    窗口失去焦点、断开连接、切换
    顶部角色、关闭窗口和配对取消也会释放输入。
 
+**Desktop** 按串流显示器的位置定位鼠标，适合点击、文字选择和拖拽。
+**Game** 捕获无限相对鼠标移动，用于 3D 游戏视角；鼠标移动不会受本机桌面
+边缘限制。Windows 使用 Raw Input，Mac 外接鼠标使用 IOHID 原始增量；未检测到
+原始鼠标设备时使用系统相对增量。**Sensitivity** 调整鼠标倍率并自动保存；`1.00×` 保留原始
+增量，高 DPI 鼠标可调低倍率。物理 DPI 和游戏内灵敏度仍影响最终转向速度。
+
+Game 按物理键位发送键盘输入，**Use English keyboard while gaming** 默认开启，
+控制期间切换英文输入源，退出时恢复之前的输入源。手柄仅在 Game 模式下向支持
+ViGEmBus 的 Windows 被控端转发，支持震动；macOS 被控端不提供虚拟手柄。
+
+**Share text clipboard** 默认开启。连接后，两端复制的文本会通过加密会话自动同步，
+支持最多 256 KiB 的 UTF-8 文本；可在控制栏或被控端关闭。连接建立时以控制端的当前文本
+剪贴板为初始内容。图片和文件不参与同步。
+
 串流画面包含远端鼠标光标及其形状变化。远程输入开启时隐藏本机光标；
 远端应用隐藏光标时，串流画面也跟随隐藏。
 
-输入捕获只在 MiniStream 窗口内生效，不安装全局键盘或鼠标钩子。为避免和
+输入仅在 MiniStream 窗口激活且开启远程控制时转发。为避免和
 游戏菜单快捷键冲突，远程输入开启时 Esc 和 F11 会发送到远端；退出控制请
 点击 **Use this device**，也可以使用始终由本机处理的保留退出组合键：
 
@@ -127,6 +141,9 @@ cpack --preset macos
 游戏音频。MiniStream 会在页面显示对应状态，可通过 **Open System Settings**
 打开系统设置。拒绝权限不会启用软件视频或麦克风回退。
 
+在 Mac 上使用 Game 原始鼠标捕获还需在 **系统设置 → 隐私与安全性 → 输入监控**
+中允许 MiniStream；更改后重新打开应用。
+
 依赖库（Asio、SDL3、Opus、Leopard-RS 等）由 CMake 按
 `cmake/Dependencies.cmake` 中的版本获取；SDK、驱动和构建目录不属于仓库。
 
@@ -145,7 +162,7 @@ macOS 输出到 `out/packages/<版本>/MiniStream-<版本>-macOS-<架构>.dmg`�
 
 - 仅支持同一局域网内的发现和连接，不包含账号、云服务、NAT 穿透或多控制器。
 - 视频使用 H.264/HEVC 硬件编码与解码，不使用软件视频回退。
-- 串流页面支持 Desktop 和 Game 鼠标模式；Game 模式锁定光标并发送相对移动。
+- 串流页面支持 Desktop 定位与 Game 相对输入、可调鼠标灵敏度及共享文本剪贴板。
 - macOS 的屏幕录制、辅助功能和音频权限由系统控制；Windows 手柄输入需要
   ViGEmBus，键盘鼠标不依赖该驱动。
 

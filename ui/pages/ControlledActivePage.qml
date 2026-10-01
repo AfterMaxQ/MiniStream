@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import MiniStream
 
 Item {
@@ -27,6 +28,13 @@ Item {
             font.pixelSize: 14
             horizontalAlignment: Text.AlignHCenter
             wrapMode: Text.WordWrap
+        }
+
+        CheckBox {
+            anchors.horizontalCenter: parent.horizontalCenter
+            text: "Share text clipboard"
+            checked: root.controller.sharedClipboard
+            onToggled: root.controller.sharedClipboard = checked
         }
 
         AppButton {

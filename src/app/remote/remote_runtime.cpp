@@ -659,7 +659,7 @@ void RemoteRuntime::tick() {
       (void)send_reliable_input(message);
     }
     if (!reliable_input_.take_failures().empty()) {
-      if (input_router_) input_router_->end();
+      release_input();
     }
   }
   if (streaming()) {

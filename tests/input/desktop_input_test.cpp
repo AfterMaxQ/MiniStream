@@ -4,36 +4,42 @@
 
 using namespace ministream;
 
-TEST_CASE("desktop input has a bounded reversible wire format") {
-  const DesktopInput input{DesktopInputKind::MouseMove, 0, -120, 450, 0};
-  const auto bytes = encode_desktop_input(input);
-  REQUIRE(bytes.size() == kDesktopInputBytes);
-  const auto decoded = decode_desktop_input(bytes);
-  REQUIRE(decoded.has_value());
-  REQUIRE(*decoded == input);
+TEST_CASE("desktop input round trips every supported input contract") {
+  const DesktopInput events[]{
+      {DesktopInputKind::Key, 0, 0, 0, static_cast<std::uint16_t>(DesktopKey::W)},
+      {DesktopInputKind::Key, kDesktopKeyRelease, 0, 0, static_cast<std::uint16_t>(DesktopKey::W)},
+      {DesktopInputKind::MouseMove, 0, -120, 450, 0},
+      {DesktopInputKind::MouseMove, kDesktopMouseGame, -120, 450, 0},
+      {DesktopInputKind::MouseMove, kDesktopMouseAbsolute, 65535, 0, 0},
+      {DesktopInputKind::MouseButton, 1, 0, 0, 0},
+      {DesktopInputKind::MouseWheel, 0, 0, 120, 0},
+      {DesktopInputKind::ReleaseAll, 0, 0, 0, 0},
+      {DesktopInputKind::InputMode, 0, 0, 0, 0},
+      {DesktopInputKind::InputMode, kInputModeGame, 0, 0, 0},
+      {DesktopInputKind::InputMode, kInputModeGame | kInputModeEnglish, 0, 0, 0}};
+  for (const auto& input : events) {
+    CAPTURE(input.kind, input.flags);
+    const auto bytes = encode_desktop_input(input);
+    REQUIRE(bytes.size() == kDesktopInputBytes);
+    REQUIRE(decode_desktop_input(bytes) == input);
+  }
 }
 
-TEST_CASE("desktop input rejects malformed or unknown events") {
+TEST_CASE("desktop input rejects unknown, contradictory and malformed events") {
   REQUIRE_FALSE(decode_desktop_input({}));
-  std::vector<std::byte> bytes(kDesktopInputBytes);
-  bytes[0] = static_cast<std::byte>(99);
+  const DesktopInput invalid[]{
+      {static_cast<DesktopInputKind>(99), 0, 0, 0, 0},
+      {DesktopInputKind::Key, 0, 0, 0, 87},
+      {DesktopInputKind::ReleaseAll, 0, 0, 0, 1},
+      {DesktopInputKind::MouseMove, kDesktopMouseAbsolute | kDesktopMouseGame, 0, 0, 0},
+      {DesktopInputKind::MouseMove, kDesktopMouseAbsolute, -1, 0, 0},
+      {DesktopInputKind::InputMode, kInputModeEnglish, 0, 0, 0},
+      {DesktopInputKind::InputMode, 4, 0, 0, 0},
+      {DesktopInputKind::InputMode, kInputModeGame, 1, 0, 0}};
+  for (const auto& input : invalid) REQUIRE(encode_desktop_input(input).empty());
+  auto bytes = encode_desktop_input({DesktopInputKind::InputMode, 0, 0, 0, 0});
+  bytes[2] = std::byte{kInputModeEnglish};
   REQUIRE_FALSE(decode_desktop_input(bytes));
-}
-
-TEST_CASE("desktop key input accepts neutral usages and rejects native key codes") {
-  const DesktopInput release{DesktopInputKind::Key, kDesktopKeyRelease, 0, 0,
-                             static_cast<std::uint16_t>(DesktopKey::W)};
-  REQUIRE(decode_desktop_input(encode_desktop_input(release)) == release);
-
-  const DesktopInput windows_vk{DesktopInputKind::Key, 0, 0, 0, 87};
-  REQUIRE(encode_desktop_input(windows_vk).empty());
-}
-
-TEST_CASE("desktop ReleaseAll is an explicit empty ownership event") {
-  const DesktopInput release_all{DesktopInputKind::ReleaseAll, 0, 0, 0, 0};
-  REQUIRE(decode_desktop_input(encode_desktop_input(release_all)) == release_all);
-
-  auto malformed = release_all;
-  malformed.data = 1;
-  REQUIRE(encode_desktop_input(malformed).empty());
+  bytes[0] = std::byte{99};
+  REQUIRE_FALSE(decode_desktop_input(bytes));
 }

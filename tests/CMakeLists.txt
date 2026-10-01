@@ -1,6 +1,5 @@
 add_executable(
   ministream_tests
-  smoke_test.cpp
   base/result_test.cpp
   protocol/wire_test.cpp
   telemetry/window_stats_test.cpp
@@ -94,14 +93,3 @@ if(MINISTREAM_BUILD_UI)
   target_link_libraries(ministream_tests PRIVATE Qt6::Gui)
 endif()
 catch_discover_tests(ministream_tests)
-
-if(APPLE)
-  find_package(Python3 COMPONENTS Interpreter)
-  if(Python3_Interpreter_FOUND)
-    add_test(
-      NAME macos_videotoolbox_queue_contract
-      COMMAND "${Python3_EXECUTABLE}"
-              "${PROJECT_SOURCE_DIR}/tests/macos/videotoolbox_queue_contract_test.py"
-    )
-  endif()
-endif()

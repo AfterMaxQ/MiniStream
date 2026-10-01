@@ -92,6 +92,12 @@ Item {
             }
         }
 
+        CheckBox {
+            text: "Share text clipboard"
+            checked: root.controller.sharedClipboard
+            onToggled: root.controller.sharedClipboard = checked
+        }
+
         AppButton {
             anchors.horizontalCenter: parent.horizontalCenter
             visible: root.controller.permissionActionAvailable

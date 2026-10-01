@@ -1,4 +1,5 @@
 #include "core/session/discovery.hpp"
+#include "core/protocol/wire.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -71,7 +72,7 @@ TEST_CASE("LAN discovery advertisement has a bounded validated wire format") {
 TEST_CASE("LAN discovery query is versioned and rejects unrelated traffic") {
   const auto query = encode_discovery_query();
   REQUIRE(is_discovery_query(query));
-  REQUIRE(query[4] == std::byte{3});
+  REQUIRE(query[4] == std::byte{kProtocolVersion});
   auto unrelated = query;
   unrelated[0] = std::byte{0};
   REQUIRE_FALSE(is_discovery_query(unrelated));

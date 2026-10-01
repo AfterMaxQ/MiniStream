@@ -17,17 +17,20 @@ DesktopInput key(DesktopKey value, bool pressed) {
 }  // namespace
 
 TEST_CASE("reliable desktop input has a bounded reversible envelope") {
-  const ReliableDesktopInput input{42, key(DesktopKey::W, false)};
-  const auto bytes = encode_reliable_desktop_input(input);
-  REQUIRE(bytes.size() == kReliableDesktopInputBytes);
-  REQUIRE(decode_reliable_desktop_input(bytes) == input);
+  for (const auto& event : {key(DesktopKey::W, false),
+         DesktopInput{DesktopInputKind::InputMode, kInputModeGame | kInputModeEnglish, 0, 0, 0}}) {
+    const ReliableDesktopInput input{42, event};
+    const auto bytes = encode_reliable_desktop_input(input);
+    REQUIRE(bytes.size() == kReliableDesktopInputBytes);
+    REQUIRE(decode_reliable_desktop_input(bytes) == input);
 
-  auto malformed = bytes;
-  malformed.pop_back();
-  REQUIRE_FALSE(decode_reliable_desktop_input(malformed).has_value());
-  REQUIRE(encode_reliable_desktop_input(
-              {43, {DesktopInputKind::MouseMove, 0, 1, 2, 0}})
-              .empty());
+    auto malformed = bytes;
+    malformed.pop_back();
+    REQUIRE_FALSE(decode_reliable_desktop_input(malformed).has_value());
+    REQUIRE(encode_reliable_desktop_input(
+                {43, {DesktopInputKind::MouseMove, 0, 1, 2, 0}})
+                .empty());
+  }
 }
 
 TEST_CASE("reliable desktop input applies buffered edges once in sequence order") {

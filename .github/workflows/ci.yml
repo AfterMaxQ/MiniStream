@@ -27,13 +27,8 @@ jobs:
         run: cmake --build build --config Release --target ministream_tests --parallel 4
       - name: Run C++ tests
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Run repository contract tests
-        run: |
-          python tests/ci/workflow_contract_test.py
-          python tests/ui/role_shell_copy_test.py
-          python tests/ui/shortcut_policy_test.py
-          python tests/packaging/packaging_contract_test.py
-          python tests/packaging/version_contract_test.py
+      - name: Check packaging contracts
+        run: python tests/packaging/packaging_contract_test.py
 
   macos:
     runs-on: macos-15

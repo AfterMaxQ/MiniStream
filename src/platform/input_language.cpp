@@ -84,7 +84,14 @@ void InputLanguageGuard::refresh() {
   const auto current = GetKeyboardLayout(GetWindowThreadProcessId(window, nullptr));
   if (current == impl_->english) return;
   impl_->windows.try_emplace(window, current);
-  PostMessageW(window, WM_INPUTLANGCHANGEREQUEST, 0, reinterpret_cast<LPARAM>(impl_->english));
+  DWORD_PTR result{};
+  SendMessageTimeoutW(window, WM_INPUTLANGCHANGEREQUEST, 0,
+      reinterpret_cast<LPARAM>(impl_->english), SMTO_ABORTIFHUNG | SMTO_BLOCK, 20, &result);
+#elif defined(__APPLE__)
+  if (!impl_->active || !impl_->english) return;
+  auto current = TISCopyCurrentKeyboardInputSource();
+  if (current && !CFEqual(current, impl_->english)) TISSelectInputSource(impl_->english);
+  if (current) CFRelease(current);
 #endif
 }
 }
