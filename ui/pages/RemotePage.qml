@@ -6,17 +6,6 @@ Item {
     id: root
     required property var controller
 
-    Timer {
-        interval: 3000
-        repeat: true
-        triggeredOnStart: true
-        running: root.visible && !root.controller.connecting
-                 && !root.controller.connected && !root.controller.pairing
-        onTriggered: {
-            if (!root.controller.searching) root.controller.findDevices()
-        }
-    }
-
     Column {
         width: Math.min(parent.width - Tokens.space32 * 2, 620)
         anchors.centerIn: parent
@@ -34,9 +23,7 @@ Item {
             }
             AppButton {
                 id: findButton
-                text: root.controller.connecting
-                      ? "Connecting"
-                      : (root.controller.searching ? "Searching" : "Find devices")
+                text: "Find devices"
                 enabled: !root.controller.searching && !root.controller.connecting
                 onClicked: root.controller.findDevices()
             }
@@ -74,7 +61,12 @@ Item {
             }
         }
 
-        SectionHeader { text: "Nearby devices · refreshes automatically" }
+        Row {
+            width: parent.width
+            spacing: 8
+            Rectangle { width: 6; height: 6; radius: 3; color: Tokens.success; anchors.verticalCenter: parent.verticalCenter }
+            SectionHeader { text: "Nearby devices · listening in the background" }
+        }
 
         Rectangle {
             width: parent.width

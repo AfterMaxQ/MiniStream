@@ -33,6 +33,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace ministream {
 
@@ -105,6 +106,7 @@ class RemoteRuntime {
   SessionTiming timing_;
   RoleState state_{RoleState::Idle};
   std::vector<DiscoveredHost> hosts_;
+  std::unordered_map<std::string, SteadyClock::time_point> host_seen_;
   std::optional<DiscoveredHost> selected_host_;
   std::unique_ptr<DiscoveryClient> discovery_;
   std::unique_ptr<UdpEndpoint> session_;

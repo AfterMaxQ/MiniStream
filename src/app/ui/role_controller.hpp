@@ -39,7 +39,7 @@ class RoleController final : public QObject {
   Q_PROPERTY(int streamQuality READ streamQuality WRITE setStreamQuality NOTIFY stateChanged)
   Q_PROPERTY(QString deviceLabel READ deviceLabel CONSTANT)
   Q_PROPERTY(QString broadcastStatus READ broadcastStatus NOTIFY stateChanged)
-  Q_PROPERTY(QStringList hosts READ hosts NOTIFY stateChanged)
+  Q_PROPERTY(QStringList hosts READ hosts NOTIFY hostsChanged)
   Q_PROPERTY(QString pairingCode READ pairingCode NOTIFY stateChanged)
   Q_PROPERTY(int pairedDeviceCount READ pairedDeviceCount NOTIFY stateChanged)
   Q_PROPERTY(QString selectedDeviceLabel READ selectedDeviceLabel NOTIFY stateChanged)
@@ -105,7 +105,7 @@ class RoleController final : public QObject {
   Q_INVOKABLE void startBroadcast();
   Q_INVOKABLE void stopBroadcast();
   Q_INVOKABLE void refresh();
-  Q_INVOKABLE void findDevices();
+  Q_INVOKABLE void findDevices(bool background = false);
   Q_INVOKABLE void connectToDevice(int index);
   Q_INVOKABLE bool pairWithCode(const QString& code);
   Q_INVOKABLE void forgetPairedDevices();
@@ -124,6 +124,7 @@ class RoleController final : public QObject {
  signals:
   void modeChanged();
   void stateChanged();
+  void hostsChanged();
 
  private:
   void tick();
@@ -144,6 +145,10 @@ class RoleController final : public QObject {
   RemoteCapabilities remote_capabilities_;
   QString failure_text_;
   QTimer tick_timer_;
+  QTimer discovery_timer_;
+  bool discovery_background_{};
+  bool discovery_initialized_{};
+  QString discovery_failure_;
   std::shared_ptr<PairingTrust> pairing_trust_;
 #if defined(_WIN32) || defined(__APPLE__)
   // The object is a small Qt-facing adapter around the platform's latest

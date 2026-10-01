@@ -72,6 +72,7 @@ void RemoteRuntime::stop() noexcept {
     backend_->stop();
   }
   hosts_.clear();
+  host_seen_.clear();
   selected_host_.reset();
   state_ = RoleState::Idle;
 }
@@ -127,7 +128,6 @@ bool RemoteRuntime::begin_discovery(Microseconds timeout) {
     return false;
   }
   if (const auto started = discovery_->start(timeout); !started) {
-    hosts_.clear();
     return false;
   }
   return true;
@@ -574,10 +574,25 @@ void RemoteRuntime::tick() {
   if (discovery_ && discovery_->active()) {
     const auto result = discovery_->poll(now);
     if (result.state == DiscoveryState::Complete) {
-      hosts_ = result.hosts;
-    } else if (result.state == DiscoveryState::Failed) {
-      hosts_.clear();
+      for (const auto& host : result.hosts) {
+        const auto key = host.address + '\n' + host.device_name;
+        host_seen_[key] = now;
+        const auto existing = std::find_if(hosts_.begin(), hosts_.end(), [&](const auto& cached) {
+          return cached.address == host.address && cached.device_name == host.device_name;
+        });
+        if (existing == hosts_.end()) hosts_.push_back(host);
+        else *existing = host;
+      }
     }
+  }
+  if (state_ == RoleState::RemoteBrowsing) {
+    std::erase_if(hosts_, [&](const auto& host) {
+      const auto key = host.address + '\n' + host.device_name;
+      const auto seen = host_seen_.find(key);
+      if (seen != host_seen_.end() && now - seen->second < std::chrono::seconds{15}) return false;
+      host_seen_.erase(key);
+      return true;
+    });
   }
 
   if (!session_) {

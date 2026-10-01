@@ -234,6 +234,12 @@ RoleController::RoleController(QObject* parent) : QObject(parent) {
           });
   connect(&tick_timer_, &QTimer::timeout, this, &RoleController::tick);
   tick_timer_.start();
+  discovery_timer_.setInterval(5000);
+  connect(&discovery_timer_, &QTimer::timeout, this, [this] {
+    if (mode_ == RoleMode::Remote && !connected() && !connecting() && !pairing()) findDevices(true);
+  });
+  discovery_timer_.start();
+  QTimer::singleShot(0, this, [this] { if (mode_ == RoleMode::Remote) findDevices(true); });
 }
 
 RoleController::~RoleController() {
@@ -310,7 +316,8 @@ bool RoleController::broadcasting() const noexcept {
 bool RoleController::searching() const noexcept {
 #if defined(_WIN32) || defined(__APPLE__)
   return mode_ == RoleMode::Remote && remote_ &&
-         remote_->discovery_state() == DiscoveryState::Searching;
+         remote_->discovery_state() == DiscoveryState::Searching &&
+         !(discovery_background_ && discovery_initialized_);
 #else
   return false;
 #endif
@@ -512,6 +519,7 @@ QString RoleController::statusText() const {
   if (connected()) {
     return QStringLiteral("Connected");
   }
+  if (!discovery_failure_.isEmpty()) return discovery_failure_;
   if (remote_->discovery_state() == DiscoveryState::Failed &&
       remote_->last_discovery_error()) {
     switch (*remote_->last_discovery_error()) {
@@ -639,6 +647,7 @@ void RoleController::refreshCapabilities() {
 }
 
 void RoleController::refresh() {
+  discovery_background_ = false;
   refreshCapabilities();
 #if defined(_WIN32) || defined(__APPLE__)
   if (mode_ == RoleMode::Remote && remote_) {
@@ -652,9 +661,11 @@ void RoleController::refresh() {
   emit stateChanged();
 }
 
-void RoleController::findDevices() {
+void RoleController::findDevices(bool background) {
 #if defined(_WIN32) || defined(__APPLE__)
   if (mode_ == RoleMode::Remote && remote_) {
+    if (remote_->discovery_state() == DiscoveryState::Searching) return;
+    discovery_background_ = background;
     if (remote_->state() == RoleState::Idle && !remote_->start()) {
       failure_text_ = QStringLiteral("Remote backend is not ready.");
     } else if (!remote_->begin_discovery() && !searching()) {
@@ -662,7 +673,7 @@ void RoleController::findDevices() {
     } else {
       failure_text_.clear();
     }
-    emit stateChanged();
+    if (!background || !discovery_initialized_) emit stateChanged();
   }
 #endif
 }
@@ -670,18 +681,15 @@ void RoleController::findDevices() {
 void RoleController::connectToDevice(int index) {
   if (!pairing_trust_) { emit stateChanged(); return; }
   const auto profile = static_cast<StreamProfileId>(stream_quality_);
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
   if (mode_ == RoleMode::Remote && remote_) {
-    if (!remote_->connect(static_cast<std::size_t>(std::max(index, 0)), profile)) {
-      failure_text_ = QStringLiteral("Unable to connect to this device.");
-    } else {
-      failure_text_.clear();
+    std::size_t selected = remote_->hosts().size();
+    int visible_index{};
+    for (std::size_t i = 0; i < remote_->hosts().size(); ++i) {
+      if (!remote_->hosts()[i].controllable) continue;
+      if (visible_index++ == index) { selected = i; break; }
     }
-    emit stateChanged();
-  }
-#elif defined(__APPLE__)
-  if (mode_ == RoleMode::Remote && remote_) {
-    if (!remote_->connect(static_cast<std::size_t>(std::max(index, 0)), profile)) {
+    if (selected == remote_->hosts().size() || !remote_->connect(selected, profile)) {
       failure_text_ = QStringLiteral("Unable to connect to this device.");
     } else {
       failure_text_.clear();
@@ -954,14 +962,30 @@ void RoleController::tick() {
   } else if (remote_ && mode_ == RoleMode::Remote) {
     const auto before_state = remote_->state();
     const auto before_discovery = remote_->discovery_state();
-    const auto before_hosts = remote_->hosts().size();
+    const auto before_discovery_failure = discovery_failure_;
+    const auto before_hosts = hosts();
     const auto before_pairing_code = remote_->pairing_code();
     const auto before_video_status = remote_->video_status();
     const auto before_input = remote_->remote_input_active();
     remote_->tick();
     const auto after_state = remote_->state();
-    if (before_state != after_state || before_discovery != remote_->discovery_state() ||
-        before_hosts != remote_->hosts().size() ||
+    const bool hosts_changed = before_hosts != hosts();
+    if (hosts_changed) emit hostsChanged();
+    const auto discovery = remote_->discovery_state();
+    const bool first_discovery = !discovery_initialized_ &&
+        (discovery == DiscoveryState::Complete || discovery == DiscoveryState::Failed);
+    if (discovery == DiscoveryState::Complete) discovery_failure_.clear();
+    if (discovery == DiscoveryState::Failed && remote_->last_discovery_error()) {
+      switch (*remote_->last_discovery_error()) {
+        case DiscoveryError::PermissionDenied: discovery_failure_ = "Allow MiniStream local network access in system settings."; break;
+        case DiscoveryError::NoUsableInterface: discovery_failure_ = "No usable network interface is available."; break;
+        default: discovery_failure_ = "Local network discovery is unavailable. Check firewall settings."; break;
+      }
+    }
+    if (first_discovery) discovery_initialized_ = true;
+    if (before_state != after_state || first_discovery || before_discovery_failure != discovery_failure_ ||
+        ((!discovery_background_ || first_discovery) && before_discovery != discovery) ||
+        hosts_changed ||
         before_pairing_code != remote_->pairing_code() ||
         before_video_status != remote_->video_status() ||
         before_input != remote_->remote_input_active()) {
@@ -996,6 +1020,7 @@ void RoleController::cleanupCurrentMode() {
     remote_->stop();
   }
 #endif
+  emit hostsChanged();
 }
 
 }  // namespace ministream
